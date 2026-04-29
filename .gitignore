@@ -1,0 +1,48 @@
+# Python/cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local editor/settings
+.vscode/
+.idea/
+user_settings.json
+
+# Runtime data and generated diagnostics
+debug/
+temp/
+build/
+dist/
+archive/
+OLD/
+
+# Packaged release/build outputs
+*.exe
+*.pkg
+*.spec
+*.zip
+portable_release/build/
+portable_release/dist/
+portable_release/payload/
+portable_release/artifacts/
+
+# External binaries are rebuilt/copied outside git
+external_bin/
+
+# Local test corpora / customer PDFs and generated masters
+Albaranes_Pruebas/
+*.pdf
+*.xlsx
+*.xls
+*.csv
+
+# Logs
+*.log

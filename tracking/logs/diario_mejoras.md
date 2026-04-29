@@ -1,0 +1,161 @@
+# Diario de mejoras
+
+## 2026-02-14
+- Eliminados overrides y parches especificos en parsers (Saltoki, Berdin, Alkain).
+- Heuristica comun de qty/precio en `common.py` para corregir cantidades infladas y precios subestimados.
+- Saltoki: normalizacion de codigos largos, optimizacion precio/dto, propagacion de albaran ultimo por PDF.
+- Berdin: normalizacion de codigos con "1" espuria, derivar qty en rescue y ruta principal cuando falta, sin hardcodes.
+- Alkain: retirada de ajustes puntuales.
+- Metricas por proveedor anadidas a `control_metrics.csv`; ultimas cifras (16:31:44):
+  - SEM05: AELVASA 90.00%, ALKAIN 85.71%, BERDIN 75.86%, CLC 80.00%, ELEKTRA 66.67%, SALTOKI 68.00%
+  - SEM06: AELVASA 100.00%, ALKAIN 91.30%, BERDIN 75.00%, JUPER 82.35%, TXOFRE 83.33%, SALTOKI 100%
+- Pendientes <80%: SALTOKI SEM05 (DTO/precio y albaran faltante), BERDIN (qty inflada), ELEKTRA (1 linea).
+
+## 2026-02-14 18:38
+- Reorganizacion de estructura del repo:
+  - Carpeta `temp/` para artefactos temporales (`tmp_*`, logs puntuales, backups).
+  - Carpeta `tracking/metrics` para `control_metrics.csv`.
+  - Carpeta `tracking/logs` para bitacora y politicas.
+  - Carpeta `tracking/rules` para `parser_rules.xlsx`.
+- La carpeta `logs/` queda vacia; los artefactos de seguimiento viven en `tracking/`.
+
+## 2026-02-14 19:05
+- Se centralizaron datasets originales y resultados en `Albaranes_Pruebas/` (nuevo repositorio de ejemplos).
+  - Contenido actual resumido: SEMANA_05 (441 ficheros, 1 PDF, 10 Excel), SEMANA_06 (875 ficheros, 1 PDF, 31 Excel), SetPrueba (290 ficheros, 152 PDF, 138 Excel), prueba2 (98 ficheros, 44 PDF, 52 Excel).
+  - Zip auxiliares en raiz de `Albaranes_Pruebas`: `NewParsers.zip` y `parsers.zip`.
+- Usar `Albaranes_Pruebas/` como origen para nuevos PDFs y GTs en futuras iteraciones.
+
+## 2026-02-14 19:20
+- Revision de ficheros raiz (fuera de `OLD/`):
+  - Core/pipeline: `main.py`, `common.py`, `config.py`, `settings_manager.py`, `run.bat`, `run_config_ui.bat`, `requirements.txt`, `README_codex.md`, `debugkit.py`, `user_settings.json` -> conservar.
+  - Herramientas manuales sin referencias internas (candidatas a archivar/limpiar): `analyze_pdf_page.py`, `check_gen.py`, `check_gt.py`, `compare_bad_good.py`, `compare_files.py`, `compare_files_v2.py`, `inspect_codex_tmp.py`, `inspect_excel.py`, `inspect_gt_cols.py`, `inspect_gt_row.py`, `inspect_specific_row.py`, `update_gt.py`, `update_gt_v2.py`, `sync_gt_warnings.py`, `p13_dump.txt`, `paginas_descartadas.csv` (2 refs puntuales), `reproduce_issue.py` (3 refs puntuales).
+  - Datos/artefactos: `albaranes_*.xlsx/txt`, `paginas_descartadas.csv` -> mover a `tracking/metrics` o `Albaranes_Pruebas` si se quiere conservar historico.
+- No se borraron archivos; decision pendiente del usuario para archivar o eliminar.
+
+## 2026-02-14 19:35
+- Limpieza raiz completada (sin tocar `OLD/`).
+  - Archivado en `archive/unused_tools`: scripts manuales sin referencias (`analyze_pdf_page.py`, `check_gen.py`, `check_gt.py`, `compare_bad_good.py`, `compare_files.py`, `compare_files_v2.py`, `inspect_codex_tmp.py`, `inspect_excel.py`, `inspect_gt_cols.py`, `inspect_gt_row.py`, `inspect_specific_row.py`, `update_gt.py`, `update_gt_v2.py`, `sync_gt_warnings.py`, `reproduce_issue.py`, `p13_dump.txt`).
+  - Datos legacy pendientes de decision movidos a `tracking/metrics/legacy` (queda vacio porque los originales ya estan en REVIEW/Albaranes_Pruebas).
+- Raiz ahora solo contiene core/pipeline, `parsers/`, `tests/`, `scripts/`, `tracking/`, `temp/`, `archive/`, `Albaranes_Pruebas/` y `OLD/`.
+
+## 2026-02-14 19:10
+- Re-evaluacion completa SEM05/SEM06 con nuevas heuristicas Saltoki (tie-break dto/precio).
+  - Saltoki SEM05 sube de 68% -> 76% (19/25 correctas; 6 missing/extra).
+  - Resto SEM05 igual que antes; SEM06 casi igual (AELVASA/GABYL 100%; ALKAIN 88.24%; BERDIN 75%; Saltoki 100%).
+- control_metrics.csv actualizado en `tracking/metrics/` con las nuevas cifras (timestamp 19:00:52).
+- Se mantienen sin overrides; coherencia de estructura (datasets en `Albaranes_Pruebas/`, temporales en `temp/`, herramientas sin uso en `archive/unused_tools/`).
+
+
+## 2026-02-14 19:55
+- Raiz minimizada: solo core (main/common/config/settings_manager, run*.bat, README_codex.md, requirements.txt, user_settings.json).
+- Movido inspect_errors.py a rchive/unused_tools/ junto al resto de utilidades manuales.
+- Carpeta debug/ se mantiene para artefactos de depuracion recientes (parser_* por proveedor).
+
+
+## 2026-02-14 20:05
+- Carpeta REVIEW/SEMANA_05 movida a rchive/review_semana05/ (contiene PDF 28-01-25 SEM 5, GT corregido, runs intermedios y diffs).
+- REVIEW/ eliminado para simplificar raiz; datasets activos permanecen en Albaranes_Pruebas/SEMANA_05 y SEMANA_06.
+
+
+## 2026-02-14 20:10
+- Renombrado rchive/unused_tools -> rchive/other_tools como repositorio de herramientas auxiliares/temporales no core.
+
+## 2026-02-14 20:12
+- Politica de seguimiento actualizada con estructura de carpetas baseline (Albaranes_Pruebas, parsers/tests/scripts, tracking, temp, archive/other_tools, archive/review_semana05, debug, OLD).
+
+## 2026-02-15 00:20
+- Añadido scripts/deploy_parsers.py: copiador de parsers/core a otra instalación (selector de carpeta o --target, soporta --dry-run; excluye backups y __pycache__).
+- Añadido scripts/build_deploy_exe.bat para empaquetar el actualizador en un exe con pyinstaller (salida en dist/deploy_parsers.exe).
+
+
+## 2026-02-15 00:25
+- PyInstaller instalado y generado dist/deploy_parsers.exe (copiador de parsers/core con selector de carpeta).
+- Guía rápida en scripts/DEPLOY_README.md (pasos para rebuild semanal y uso).
+- scripts/build_deploy_exe.bat actualizado para usar python -m PyInstaller.
+
+## 2026-02-15 10:31
+- Redondeo financiero centralizado en common.py (Decimal + ROUND_HALF_UP); fix_qty_price_import con modo safe/aggressive y soporte UnidadesPor.
+- SALTOKI: normalización de albarán preserva NNN.NNN, colapso de números partidos, asignación de precio/dto más conservadora (sin divisiones creativas), detección de NETO, uso de Decimal.
+- CLC: patrón de línea exige coma en cantidades/precios para evitar capturar sufijos (.3).
+- ALKAIN: eliminada heurística que movía cantidad si el primer número <1.
+- ELEKTRA/AELVASA: extracción de UnidadesPor (/D=10, /C=100, /M|P=1000) y uso en items.
+- BERDIN: cálculos consideran UnidadesPor (UDS/P) y derivación de qty más conservadora.
+- Nuevo script scripts/regression_sem05.py para comparar master run vs corregido y generar métricas/diffs rápidos.
+- Intento de run completo SEMANA_05 vía CLI abortado por timeout (>10min); proceso limpiado. Pendiente rerun con más tiempo.
+
+## 2026-02-15 13:00
+- Añadido flags CLI --skip-ocr (solo texto embebido) y --no-ui (modo batch sin diálogos Tk); input final tolera EOF.
+- Runs batch sin OCR: SEMANA_05 y SEMANA_06 regenerados en ~1-2 min. SEM05 run genera master actualizado; SEM06 genera albaranes_master_run_semana06_newparsers.xlsx.
+- Métricas con scripts/regression_sem05.py:
+  - SEM05: SALTOKI 100%, ALKAIN 85.7%, BERDIN 69.0%, AELVASA 60.0%, ELEKTRA 33.3%, CLC 23.5%.
+  - SEM06: ALKAIN 91.3%, BERDIN 75.0%, GABYL 88.9%, JUPER 80.0%, TXOFRE 66.7%, AELVASA 44.4%, SALTOKI 100%, ARAIZ 0%.
+- control_metrics.csv actualizado con los nuevos resultados (timestamp 2026-02-15 13:00:22).
+
+## 2026-02-15 13:32
+- Se retiró el flag --skip-ocr (el usuario debe decidir OCR); solo queda --no-ui. No se toca configuración OCR por defecto.
+- Run SEMANA_05 rehecho con configuración OCR intacta; master actualizado (mismas métricas que el batch anterior porque Doctr no instalado, tesseract activo).
+- control_metrics.csv actualizado con timestamp 2026-02-15 13:31:45.
+
+## 2026-02-15 14:31
+- Saltoki: filtrado de números desorbitados (>9 dígitos con coma) y descarta qty/price/imp fuera de rango; tail_nums limita a <1e6. Evita desbordes y errores float/Decimal.
+- Re-run SEM05 (OCR por defecto): SALTOKI pasa de errores a 52.94% líneas correctas (aún 6 fallbacks sin líneas). Resto igual: ALKAIN 85.71, BERDIN 68.97, AELVASA 60.0, ELEKTRA 33.33, CLC 23.53.
+- control_metrics.csv actualizado con los nuevos resultados (timestamp 2026-02-15 14:31:10).
+
+## 2026-02-16 00:05
+- Norma de evaluación refinada: solo se contabilizan discrepancias en campos corregidos del GT (Importe, AlbaranNumero, SuPedido, Proveedor) y se consideran líneas faltantes/sobrantes frente al GT.
+- Reporte BERDIN centrado en Importe: `debug/berdin_errors_importe_only_2026-02-15.csv` (7 líneas con Importe incorrecto en SEM05; SEM06 sin discrepancias porque GT no corrige esos campos).
+- Estado actual con todos los proveedores >=60%: SEM05 — SALTOKI 60.0, ALKAIN 85.71, AELVASA 80.0, BERDIN 68.97, ELEKTRA 66.67, CLC 60.0. SEM06 — ARAIZ/SALTOKI/BASMODEC 100, ALKAIN 95.65, GABYL 88.89, TXOFRE 83.33, JUPER 80.0, BERDIN 75.0, AELVASA 88.89.
+## 2026-02-18 17:40
+- OCR/SuPedido audit completed on latest run (SEM05/SEM06/SEM07): remaining failures classified by OCR evidence.
+  - Summary: total mismatches reduced from 21 to 14.
+  - OCR-audit categories: 10 non-eliminable by OCR (value not visible in raw OCR), 2 parser-eliminable, 2 GT-empty.
+  - Reports saved: `debug/supedido_failure_analysis_supedidofix8.csv`, `debug/supedido_ocr_audit_fix8_summary.csv`, `debug/supedido_failure_run_compare_fix8.csv`.
+- General parser fixes applied (no hardcode):
+  - `parsers/araiz.py`: SuPedido regex expanded to support `aa.xxx/yy[/sufijo]`.
+  - `parsers/gabyl.py`: `Ped. Cliente` extraction now supports OCR spaces around `/` and trims `TEL/FAX` tails.
+  - `parsers/txofre.py`: textual SuPedido (`LIS TELEFONO` / `TELEFONO LIS`) preserved and normalized.
+  - `main.py` + `config.py`: TXOFRE SuPedido normalization now allows textual forms without dropping them.
+- Project cleanup performed to reduce confusion before next iteration:
+  - Moved obsolete parser variants/backups/temp root scripts to `OLD/cleanup_20260218/`.
+  - Moved legacy root artifacts: `saltoki.py`, `REVIEW_SEM05_tmp.xlsx`, `temp_restore/` into `OLD/cleanup_20260218/`.
+  - Cleaned cache folders (`__pycache__`, `.pytest_cache`).
+  - Full manifest: `OLD/cleanup_20260218/cleanup_manifest.csv`.
+
+## 2026-02-18 18:25
+- Iteracion SuPedido completada (sin hardcode por documento) y rerun completo SEM05/SEM06/SEM07.
+- Cambios de parser:
+  - `parsers/aelvasa.py`: limpieza de token SuPedido ajustada para proteger segmento OCR `/0L/` y mantener conversion numerica en contexto general.
+  - `parsers/berdin.py`: se mantiene normalizacion estable previa (`25.625�01/E -> 25.625-01/E`) para no degradar serie historica.
+  - `common.py`: `normalize_supedido_code` acepta variante compacta `aa.xxxxx[/suf]` para analisis/canonizacion.
+- Salidas de ejecucion:
+  - `Albaranes_Pruebas/SEMANA_05/albaranes_master_run_sem05_supedidofix10.xlsx`
+  - `Albaranes_Pruebas/SEMANA_06/albaranes_master_run_sem06_supedidofix10.xlsx`
+  - `Albaranes_Pruebas/SEMANA_07/albaranes_master_run_sem07_supedidofix10.xlsx`
+- Metricas exportadas:
+  - Estricto: `debug/global_metrics_supedidofix10.csv`, `debug/global_metrics_supedidofix10_totals.csv`
+  - SuPedido semantico (equivalencias OCR de formato): `debug/global_metrics_supedidofix10_semantic.csv`, `debug/global_metrics_supedidofix10_semantic_totals.csv`
+- Control historico actualizado:
+  - `tracking/metrics/control_metrics.csv` (+23 filas, run tag `SEMxx_supedidofix10`).
+- Validacion tecnica: `pytest` OK (`17 passed`).
+
+## 2026-02-18 19:10
+- Cambio mayor de salidas: el pipeline ya no genera Excels por proveedor; solo master + auxiliares (`albaranes_errores.xlsx`, `albaranes_errores.txt`, `paginas_descartadas.csv`, logs/debug).
+- Nuevo flujo GUI principal en `albaranes_tool/gui_app.py`:
+  - Entrada/salida en una sola ventana.
+  - Opciones basicas + OCR simplificado (automatico / forzar) + panel OCR avanzado colapsable.
+  - Ejecucion en hilo, progreso/counters, cancelacion con `threading.Event`, log embebido con scroll.
+  - Botones finales para abrir master y carpeta de salida.
+- Pipeline desacoplado a `run_pipeline(...)` en `main.py` para reutilizar desde CLI/GUI.
+- `process_pdf(...)` ahora consulta `cancel_event` y emite eventos de progreso via callback.
+- Persistencia de configuracion movida a AppData via `settings_manager.py` (`%APPDATA%/AlbaranesParser/config.json`) con fallback al archivo legacy `user_settings.json`.
+- Validaciones:
+  - `pytest` OK (17 tests).
+  - Run real SEM07 en modo batch: salida solo con `albaranes_master.xlsx` + auxiliares (sin excels por proveedor).
+
+## 2026-02-18 19:40
+- Nueva normalizacion opcional `SuPedido truncated` implementada en core (`main.py`):
+  - Formatos objetivo: `A/H + 6-7 digitos` y `#####` o `#####/##`.
+  - Activada por defecto desde `config.py` con `SUPEDIDO_TRUNCATED_ENABLED = True`.
+- Configuracion GUI ampliada (`albaranes_tool/gui_app.py`) con checkbox `SuPedido truncated` y persistencia en config.
+- `settings_manager.py` mantiene configuracion en AppData (`%APPDATA%/AlbaranesParser/config.json`).
+- Validado en run SEM07: ejemplos de salida truncada correctos (TXOFRE/BERDIN/SALTOKI/AELVASA).
