@@ -131,7 +131,9 @@ def _parse_row(ln: str):
         if DEC_RE.match(tokens[i]):
             imp = _num(tokens[i])
             break
-    if imp is None:
+    if imp == 0 and price == 0:
+        imp = None
+    elif imp is None and price != 0:
         imp = price
 
     return qty, code, concept, price, imp
