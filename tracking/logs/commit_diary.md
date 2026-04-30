@@ -121,3 +121,17 @@ Debe actualizarse antes de cerrar cualquier commit nuevo.
   - `requirements-ocr-experimental.txt`
   - `requirements.txt`
 
+### c2b3699 - Add commit diary workflow
+
+- Fecha: 2026-04-30T14:41:52+02:00
+- Autor: codexikerhg
+- Tipo: trazabilidad y operativa
+- Resumen: anade diario versionado por commit, script para detectar entradas faltantes, instrucciones en AGENTS/GitHub workflow y entradas historicas completas para los commits ya publicados.
+- Validacion: `python -m py_compile main.py config.py albaranes_tool\gui_app.py albaranes_tool\selftest.py scripts\update_commit_diary.py`; `python -m pytest` con 21 tests pasados; `python scripts\update_commit_diary.py --check`.
+- Impacto/Riesgo: mejora trazabilidad de cambios y obliga a documentar validacion e impacto por commit funcional. Los commits solo de diario quedan exentos para evitar recursividad del hash.
+- Archivos:
+  - `AGENTS.md`
+  - `docs/GITHUB_WORKFLOW.md`
+  - `scripts/update_commit_diary.py`
+  - `tracking/logs/commit_diary.md`
+
