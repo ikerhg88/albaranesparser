@@ -52,6 +52,31 @@ git commit -m "Descripcion breve"
 git push
 ```
 
+## Diario Por Commit
+
+El repositorio mantiene un diario estricto en:
+
+```text
+tracking/logs/commit_diary.md
+```
+
+Despues de crear commits:
+
+```powershell
+python scripts\update_commit_diary.py
+```
+
+Antes de subir:
+
+```powershell
+python scripts\update_commit_diary.py --check
+rg -n "pendiente de completar|pendiente de clasificar" tracking\logs\commit_diary.md
+```
+
+Cada entrada debe explicar tipo de cambio, resumen, validacion e impacto/riesgo. No dejar entradas pendientes.
+
+Los commits que solo modifican `tracking/logs/commit_diary.md` quedan exentos para evitar recursividad con el hash del propio commit. El resto de commits debe tener entrada.
+
 ## Si Cambia La Clave SSH
 
 Revisar `C:\Users\ikerh\.ssh\config`. Debe existir una unica entrada efectiva para GitHub:

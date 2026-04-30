@@ -69,3 +69,21 @@ git@github.com:ikerhg88/albaranesparser.git
 ```
 
 Use intentional commits with clear messages. Do not commit generated releases or customer PDFs.
+
+## Commit Diary
+
+Every commit must be represented in `tracking/logs/commit_diary.md`.
+Diary-only commits that modify only that file are exempt to avoid self-referential hash churn.
+
+After creating a commit, run:
+
+```powershell
+python scripts\update_commit_diary.py
+```
+
+Then complete the generated entry with `Tipo`, `Resumen`, `Validacion` and `Impacto/Riesgo`. Before pushing, verify:
+
+```powershell
+python scripts\update_commit_diary.py --check
+rg -n "pendiente de completar|pendiente de clasificar" tracking\logs\commit_diary.md
+```
