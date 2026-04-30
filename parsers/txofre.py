@@ -157,7 +157,29 @@ def _extract_header(text: str):
 
     if supedido in {"LIS TELEFONO", "TELEFONO LIS"}:
         return albaran, fecha, supedido
+    rc_supedido = _extract_rc_supedido(text)
+    if rc_supedido and not re.match(r"^[AH]\d{6}", supedido or "", flags=re.I):
+        supedido = rc_supedido
     return albaran, fecha, normalize_supedido_code(supedido)
+
+
+def _extract_rc_supedido(text: str) -> str:
+    m = re.search(
+        r"Fec\s*:\s*(\d{1,2})/(\d{1,2})/(\d{2,4}).{0,80}?R\.?\s*C\s*:\s*([AH]?\d{3,6})",
+        text,
+        flags=re.I | re.S,
+    )
+    if not m:
+        return ""
+    _day, month, year, raw = m.groups()
+    prefix = raw[0].upper() if raw[0].upper() in {"A", "H"} else "H"
+    digits = re.sub(r"\D", "", raw)
+    yy = year[-2:]
+    if len(digits) == 3:
+        return f"{prefix}{digits}{str(int(month))}{yy}"
+    if len(digits) == 6:
+        return f"{prefix}{digits}"
+    return ""
 
 
 def _num(tok: str):
@@ -246,6 +268,8 @@ def _parse_row(ln: str):
         if re.search(r"[A-Z]", t, re.I) and re.search(r"[0-9]", t):
             code_idx = i
             break
+    if code_idx is None and tokens and re.fullmatch(r"[A-Z][A-Z0-9]{3,}", tokens[0], flags=re.I):
+        code_idx = 0
 
     start_n = code_idx + 1 if code_idx is not None else 0
     numeric_idx = [
@@ -275,6 +299,15 @@ def _parse_row(ln: str):
             dval = _num(m_disc.group(1))
             if dval is not None and 0 <= dval <= 100:
                 disc = dval
+        if len(comma_matches) == 2:
+            tail = ln[comma_matches[1].end() :]
+            m_tail_disc = re.search(r"\b(\d{1,3})\b", tail)
+            if m_tail_disc:
+                dval = _num(m_tail_disc.group(1))
+                if dval is not None and 0 <= dval < 100:
+                    disc = dval
+                    if qty is not None and price is not None:
+                        imp = round(qty * price * (100 - disc) / 100, 2)
 
     # Fallback: secuencia cruda si faltan datos
     if qty is None or price is None or imp is None:

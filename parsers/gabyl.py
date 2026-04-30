@@ -13,6 +13,7 @@ from config import OCR_CONFIG
 
 PARSER_ID = "gabyl"
 PROVIDER_NAME = "GABYL"
+BRAND_ALIASES = ["GABYL", "GABYL GUI", "GABVL", "6ABVL", "SUMINISTROS ELECTRICOS GABYL"]
 
 NUM = r"\d{1,3}(?:\.\d{3})*(?:,\d{2,3}|\.\d{2,3})"
 NUM_RE = re.compile(NUM)
@@ -424,10 +425,17 @@ def parse_page(page, page_num):
     items = expanded_items
 
     neto = None; total = None
-    for ln in lines[-25:]:
+    tail_lines = lines[-25:]
+    for idx, ln in enumerate(tail_lines):
         ln2 = _collapse_nums(ln)
         if re.search(r"Total\s+neto", ln2, re.I):
             m = NUM_RE.search(ln2);  neto = _to_float(m.group(0)) if m else neto
+            if neto is None:
+                for nxt in tail_lines[idx + 1 : idx + 4]:
+                    m_next = NUM_RE.search(_collapse_nums(nxt))
+                    if m_next:
+                        neto = _to_float(m_next.group(0))
+                        break
 
     meta = {
         "Proveedor": PROVIDER_NAME, "Parser": PARSER_ID,
@@ -436,6 +444,31 @@ def parse_page(page, page_num):
         "NetoComercialPie": np.nan if neto is None else neto,
         "TotalAlbaranPie": np.nan,
     }
+
+    if not items and neto is not None:
+        ref_prov = ""
+        for ln in lines:
+            if ln.upper().startswith("REF. PROV"):
+                ref_prov = ln.split(":", 1)[-1].strip()
+                break
+        items.append({
+            "Proveedor": PROVIDER_NAME,
+            "Parser": PARSER_ID,
+            "AlbaranNumero": albaran,
+            "FechaAlbaran": fecha,
+            "SuPedidoCodigo": su_pedido,
+            "Codigo": f"UNK_P{page_num}_TOTAL",
+            "Descripcion": ref_prov or "NO PARSE - revisar manualmente",
+            "CantidadServida": 1.0,
+            "PrecioUnitario": None,
+            "DescuentoPct": None,
+            "Importe": neto,
+            "Pagina": page_num,
+            "Pdf": "",
+            "ParseWarn": "gabyl_total_fallback",
+        })
+        suma = neto
+        meta["SumaImportesLineas"] = suma
 
     try:
         from debugkit import dbg_parser_page

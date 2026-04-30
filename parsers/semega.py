@@ -67,8 +67,17 @@ def _extract_header(text: str):
     return alb, fecha, supedido
 
 
+def _extract_base_importe(text: str):
+    m = re.search(r"Base\s+imponible.*?(\d{1,3}(?:\.\d{3})*,\d{2})", text, flags=re.I | re.S)
+    if not m:
+        return None
+    return to_float(m.group(1))
+
+
 def _parse_row(ln: str):
     ln = normalize_spaces(ln)
+    ln = re.sub(r"(\d+,)\s+(\d{3}\(100\))", r"\1\2", ln)
+    per_100_price = "(100)" in ln
     if not ln or "REF." in ln.upper():
         return None
     up = ln.upper()
@@ -78,6 +87,14 @@ def _parse_row(ln: str):
     code = tokens[0]
     # buscar números a partir de la posición 1 (evita el código)
     num_positions = [i for i, t in enumerate(tokens[1:], start=1) if _num_like(t)]
+    while len(num_positions) >= 2:
+        first_tok = tokens[num_positions[0]]
+        second_tok = tokens[num_positions[1]]
+        first = _to_num(first_tok)
+        if first is not None and first > 100 and "," not in first_tok and "," in second_tok:
+            num_positions = num_positions[1:]
+            continue
+        break
     if len(num_positions) < 3:
         return None
     qty_idx = num_positions[0]
@@ -96,6 +113,9 @@ def _parse_row(ln: str):
     concept = " ".join(concept_tokens).strip()
     if qty is None or price is None or not concept:
         return None
+    expected = round(qty * price / (100 if per_100_price else 1), 2) if qty is not None and price is not None else None
+    if expected is not None and importe is not None and 0 <= importe < expected * 0.1:
+        importe = expected
     return qty, code, concept, price, dto, importe
 
 
@@ -143,6 +163,13 @@ def parse_page(page, page_num, proveedor_detectado="SEMEGA"):
         )
         if imp is not None:
             suma += imp
+
+    base_importe = _extract_base_importe(joined)
+    if len(items) == 1 and base_importe is not None:
+        current = items[0].get("Importe")
+        if current is None or float(current or 0) == 0 or base_importe > float(current or 0) * 2:
+            items[0]["Importe"] = base_importe
+            suma = base_importe
 
     meta = {
         "Proveedor": proveedor_detectado,

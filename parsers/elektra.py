@@ -240,6 +240,11 @@ def _shrink_supedido(raw: str, codcli: str | None) -> str:
     s = re.sub(r"\s*([./-])\s*", r"\1", s)
     tokens = [t for t in s.split() if t.upper() not in _NOISE]
     s = " ".join(tokens)
+    compact = re.sub(r"[\s\[\]()]+" , "", s.upper())
+    compact = compact.replace("HWEB", "H").replace("/WEB", "")
+    m_ah = re.search(r"(?:^|[^A-Z0-9])[1I]?([AH]\d{6}(?:/[A-Z])?)", " " + compact)
+    if m_ah:
+        return m_ah.group(1)
 
     # Patrones directos con puntos y barras
     m = _PAT_DOC.search(s)

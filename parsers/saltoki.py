@@ -153,6 +153,50 @@ def _parse_standard_items(lines, page_num, albaran, fecha, su_pedido):
             i += 1
             continue
 
+        comma_num_positions = [
+            idx for idx, tok in enumerate(tokens)
+            if re.fullmatch(r"-?\d+(?:\.\d{3})*,\d+", _clean_num_token(tok) or "")
+        ]
+        if len(comma_num_positions) == 1:
+            qty_idx = comma_num_positions[0]
+            qty = _to_float(_clean_num_token(tokens[qty_idx]))
+            desc_text = _clean_description(" ".join(tokens[:qty_idx]))
+            extras = []
+            j = i + 1
+            while j < len(lines):
+                nxt = lines[j]
+                nxt_probe = _strip_noise_prefix(nxt)
+                if STOP_RE.search(nxt):
+                    break
+                nxt_code = ALNUM_CODE_RE.search(nxt_probe)
+                if nxt_code and any(ch.isdigit() for ch in nxt_code.group("code")) and re.search(r"\d+,\d+", nxt_code.group("rest")):
+                    break
+                if IGNORED_RE.match(nxt):
+                    break
+                if nxt.strip():
+                    extras.append(_clean_description(nxt))
+                j += 1
+            if extras:
+                desc_text = f"{desc_text} | {' | '.join(extras)}" if desc_text else " | ".join(extras)
+            items.append({
+                "Proveedor": PROVIDER_NAME,
+                "Parser": PARSER_ID,
+                "AlbaranNumero": albaran,
+                "FechaAlbaran": fecha,
+                "SuPedidoCodigo": su_pedido,
+                "Codigo": _normalize_code(m_code.group("code")),
+                "Descripcion": f"{m_code.group('code')} {desc_text}".strip(),
+                "CantidadServida": qty,
+                "PrecioUnitario": None,
+                "DescuentoPct": None,
+                "Importe": None,
+                "Pagina": page_num,
+                "Pdf": "",
+                "ParseWarn": "saltoki_qty_only",
+            })
+            i = j
+            continue
+
         nums_rev, desc_rev = [], []
         for tok in reversed(tokens):
             if tok == "/":
@@ -262,6 +306,12 @@ def _parse_standard_items(lines, page_num, albaran, fecha, su_pedido):
         }))
         suma += (imp or 0.0)
         i = j
+    if len(items) == 1 and items[0].get("Importe") is None and items[0].get("PrecioUnitario") in (None, ""):
+        qty_only = items[0].get("CantidadServida")
+        if qty_only is not None:
+            items[0]["Importe"] = qty_only
+            items[0]["ParseWarn"] = "saltoki_qty_only_as_importe"
+            suma = float(qty_only)
     return items, suma
 
 def _parse_abono_items(lines, page_num, albaran, fecha, su_pedido):

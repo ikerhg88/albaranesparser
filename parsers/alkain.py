@@ -290,7 +290,7 @@ STOP_RE = re.compile(r"(ANTICIPO|CONDICIONES|FORMA DE PAGO|IMPORTE TOTAL)", re.I
 SUPEDIDO_BLACKLIST = {"20014", "20115", "20280", "20018", "20870"}
 INLINE_CODE_RE = re.compile(r"^\s*(?:\d+\s+)?(\d{5,6})\s*$")
 PEDIDO_RE = re.compile(r"PEDIDO[:\s]+([A-Z0-9./-]{4,20})", re.I)
-ORDER_CODE_RE = re.compile(r"\b(\d{2}\.\d{3}/\d{2}|[A-Z]?-?\d{5,6}/\d{2}|[A-Z]?-?\d{5,6})\b")
+ORDER_CODE_RE = re.compile(r"\b(\d{2}\.\d{3}(?:/\d{2})?|[A-Z]?-?\d{5,6}/\d{2}|[A-Z]?-?\d{5,6})\b")
 
 
 def _find_supedido(lines: list[str], header_idx: int | None = None) -> str:

@@ -174,6 +174,8 @@ def parse_page(page, page_num, proveedor_detectado="ELICETXE"):
                 i += 1
                 continue
             imp = None
+        elif imp is None and price == 0:
+            imp = 0.0
         items.append(
             {
                 "Proveedor": proveedor_detectado,

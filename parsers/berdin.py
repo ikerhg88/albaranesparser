@@ -1480,6 +1480,19 @@ def parse_page(page, page_num):
         su_pedido = re.sub(r"^[^0-9A-Z]+", "", su_pedido)
         su_pedido = normalize_supedido_code(su_pedido)
     if not _looks_valid_supedido(su_pedido):
+        for idx, ln in enumerate(full_lines[:80]):
+            if not _is_supedido_header_text(ln):
+                continue
+            for cand_ln in full_lines[idx + 1 : idx + 4]:
+                parts = re.split(r"\s{2,}", normalize_spaces(cand_ln))
+                first_col = (parts[0] if parts else "").strip("[]()!¡.:; ")
+                token = (first_col.split()[0] if first_col.split() else "").strip("[]()!¡.:; ")
+                if re.fullmatch(r"[A-Za-z]{3,12}", token):
+                    su_pedido = token
+                    break
+            if su_pedido:
+                break
+    if not _looks_valid_supedido(su_pedido) and not re.fullmatch(r"[A-Za-z]{3,12}", su_pedido or ""):
         flat = re.sub(r"[^A-Z0-9]", " ", _ascii(joined.upper()))
         compact_candidates = re.findall(r"\b\d{8,9}[A-Z]?\b", flat)
         for cand in compact_candidates:
@@ -1491,6 +1504,19 @@ def parse_page(page, page_num):
             fj_match = re.search(r"\b(\d{2})(\d{3})FJ\b", flat)
             if fj_match:
                 su_pedido = f"{fj_match.group(1)}.{fj_match.group(2)}-FJ"
+        if not _looks_valid_supedido(su_pedido):
+            for idx, ln in enumerate(full_lines[:80]):
+                if not _is_supedido_header_text(ln):
+                    continue
+                for cand_ln in full_lines[idx + 1 : idx + 4]:
+                    parts = re.split(r"\s{2,}", normalize_spaces(cand_ln))
+                    first_col = (parts[0] if parts else "").strip("[]()!¡.:; ")
+                    token = (first_col.split()[0] if first_col.split() else "").strip("[]()!¡.:; ")
+                    if re.fullmatch(r"[A-Za-z]{3,12}", token):
+                        su_pedido = token
+                        break
+                if su_pedido:
+                    break
     su_pedido = _strip_trailing_internal_order(
         normalize_supedido_code(_normalize_supedido(su_pedido, albaran))
     )

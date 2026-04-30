@@ -94,12 +94,20 @@ SUPEDIDO_RULES = {
         "require_alpha": False,
     },
     "BERDIN": {
-        "min_length": 5,
-        "min_digits": 3,
+        "min_length": 3,
+        "min_digits": 0,
         "require_alpha": False,
+        "allow_numeric": True,
         # BERDIN suele incluir sufijos de ruido OCR (/Y, /H, /IA1, ...)
         # y queremos normalizarlo al formato compacto del resto.
         "preserve_alpha_suffix": False,
+    },
+    "HILTI": {
+        "min_length": 3,
+        "min_digits": 0,
+        "require_alpha": False,
+        "allow_numeric": True,
+        "no_truncate": True,
     },
     "ELEKTRA": {
         "min_length": 3,

@@ -7,12 +7,15 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from common import normalize_spaces
+import numpy as np
+
+from common import normalize_spaces, to_float
 from ._vendor_simple import (
     build_single_result,
     default_fecha,
     extract_first,
     extract_first_item_row,
+    find_header_index,
     normalize_albaran,
     normalize_supedido,
 )
@@ -203,6 +206,65 @@ def _extract_supedido(lines: list[str], joined: str) -> str:
     return normalize_supedido(candidates[0] if candidates else "")
 
 
+def _parse_table_items(lines: list[str], page_num: int, albaran: str, fecha: str, su_pedido: str) -> list[dict]:
+    header_idx = find_header_index(lines, ["ARTICULO", "DESCRIPCION", "CANTIDAD"])
+    if header_idx < 0:
+        return []
+
+    items: list[dict] = []
+    current: dict | None = None
+
+    def _flush() -> None:
+        nonlocal current
+        if current is not None:
+            current["Descripcion"] = normalize_spaces(current.get("Descripcion", ""))
+            items.append(current)
+            current = None
+
+    for line in lines[header_idx + 1 :]:
+        up = line.upper()
+        if any(marker in up for marker in ("TRANSPORTISTA", "BULTOS", "FIRMA", "PORTES DEBIDOS")):
+            break
+        if not line.strip("-_ /"):
+            continue
+        m = re.match(r"^(?P<body>.+?)\s+(?P<qty>\d+(?:[.,]\d+)?)$", line)
+        if m:
+            _flush()
+            body = normalize_spaces(m.group("body"))
+            qty = to_float(m.group("qty"))
+            code = ""
+            desc = body
+            if body.upper().startswith("ONA "):
+                desc = body[4:].strip()
+            elif re.match(r"^[A-Z]{2,}[-A-Z0-9]*\s+", body):
+                first, rest = body.split(" ", 1)
+                if re.search(r"\d", first) or first.upper() in {"NODO"}:
+                    code = first
+                    desc = rest
+            current = {
+                "Proveedor": PROVIDER_NAME,
+                "Parser": PARSER_ID,
+                "AlbaranNumero": albaran,
+                "FechaAlbaran": fecha,
+                "SuPedidoCodigo": su_pedido,
+                "Codigo": code,
+                "Descripcion": desc,
+                "CantidadServida": qty,
+                "PrecioUnitario": None,
+                "DescuentoPct": None,
+                "Importe": 0.0,
+                "Pagina": page_num,
+                "Pdf": "",
+                "ParseWarn": "leycolan_structured",
+            }
+            continue
+        if current is not None:
+            current["Descripcion"] = f"{current.get('Descripcion', '')} {line}"
+
+    _flush()
+    return items
+
+
 def parse_page(page, page_num):
     text = page.extract_text() or ""
     lines = [normalize_spaces(ln) for ln in text.splitlines() if ln.strip()]
@@ -217,16 +279,19 @@ def parse_page(page, page_num):
             su_pedido = _extract_supedido(ocr_lines, " ".join(ocr_lines))
     fecha = default_fecha(lines, joined)
 
-    code, desc, qty = extract_first_item_row(
-        lines,
-        header_markers=["ARTIC", "DESCRIP", "CANTIDAD"],
-        stop_markers=["TRANSPORTISTA", "FIRMA", "PORTES DEBIDOS"],
-    )
-    if not desc:
-        desc = " | ".join(lines[:12])
-
-    # Documento sin total economico claro a nivel cabecera.
-    importe = 0.0
+    items = _parse_table_items(lines, page_num, albaran, fecha, su_pedido)
+    if items:
+        meta = {
+            "Proveedor": PROVIDER_NAME,
+            "Parser": PARSER_ID,
+            "AlbaranNumero": albaran,
+            "FechaAlbaran": fecha,
+            "SuPedidoCodigo": su_pedido,
+            "SumaImportesLineas": 0.0,
+            "NetoComercialPie": np.nan,
+            "TotalAlbaranPie": np.nan,
+        }
+        return items, meta
 
     return build_single_result(
         provider_name=PROVIDER_NAME,
@@ -235,11 +300,7 @@ def parse_page(page, page_num):
         albaran=albaran,
         fecha=fecha,
         su_pedido=su_pedido,
-        descripcion=desc,
-        codigo=code,
-        cantidad=qty,
-        precio=None,
-        dto=None,
-        importe=importe,
+        descripcion=" | ".join(lines[:12]),
+        importe=0.0,
         parse_warn="leycolan_structured",
     )
