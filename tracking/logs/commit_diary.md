@@ -161,3 +161,17 @@ Debe actualizarse antes de cerrar cualquier commit nuevo.
   - `parsers/txofre.py`
   - `tracking/logs/diario_semana11_codex.md`
 
+### 0de5603 - Add parser diagnostic warnings
+
+- Fecha: 2026-04-30T17:25:15+02:00
+- Autor: codexikerhg
+- Tipo: diagnostico parser
+- Resumen: anade avisos generales con codigo y accion sugerida para proveedor no detectado, proveedor detectado sin referencias y parser detectado sin lineas. Extiende la traza por pagina y mantiene el diario de SEMANA_11 actualizado.
+- Validacion: `python -m py_compile main.py config.py tests/test_page_warnings.py`; `python -m pytest` con 24 tests pasados; run SEMANA_11 con avisos en paginas 17, 47 y 48; comparativa `sem11_warn_rules_final` mantiene `TOTAL_CRITICAL_ERRORS=1`.
+- Impacto/Riesgo: mejora la visibilidad de paginas que requieren onboarding o ajuste de cabecera sin cambiar los valores criticos extraidos. Riesgo bajo, acotado a informes de errores/traza y `ParseWarn`.
+- Archivos:
+  - `config.py`
+  - `main.py`
+  - `tests/test_page_warnings.py`
+  - `tracking/logs/diario_semana11_codex.md`
+
