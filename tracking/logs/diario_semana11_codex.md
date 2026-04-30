@@ -76,3 +76,22 @@
 - `python -m py_compile main.py config.py parsers/*.py`
 - `python -m pytest`: 21 passed.
 - Runs y comparativas de SEMANA_05, SEMANA_06, SEMANA_07, SEMANA_09, SEMANA_10 y SEMANA_11.
+
+## 2026-04-30 - Avisos generales de paginas sin proveedor/referencias
+
+### Cambio Aplicado
+
+- Regla comun `PROVEEDOR_NO_DETECTADO` cuando la deteccion devuelve `DESCONOCIDO`.
+- Regla comun `REFERENCIAS_NO_DETECTADAS` cuando hay proveedor detectado pero no aparece ningun dato de referencia (`AlbaranNumero`, `FechaAlbaran`, `SuPedidoCodigo`).
+- Regla comun `PARSER_SIN_LINEAS` cuando el proveedor se detecta pero el parser no devuelve lineas.
+- Los avisos se escriben en `albaranes_errores.xlsx`, `albaranes_errores.txt`, `debug/detalle_paginas.xlsx` y `debug/detalle_paginas.json`, con accion diagnostica sugerida.
+
+### Validacion SEMANA_11
+
+| Pagina | ProveedorDetectado | Codigo aviso |
+|---:|---|---|
+| 17 | DESCONOCIDO | PROVEEDOR_NO_DETECTADO |
+| 47 | DESCONOCIDO | PROVEEDOR_NO_DETECTADO |
+| 48 | DESCONOCIDO | PROVEEDOR_NO_DETECTADO |
+
+La comparativa final mantiene `TOTAL_CRITICAL_ERRORS=1`, residual BERDIN p.53 por importe del master.

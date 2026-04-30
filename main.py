@@ -332,6 +332,101 @@ def _page_missing_required(items, meta, required_fields):
     return False
 
 
+REFERENCE_FIELDS = ("AlbaranNumero", "FechaAlbaran", "SuPedidoCodigo")
+_MISSING_TEXT_VALUES = {"", "NAN", "NONE", "NULL", "NAT"}
+
+
+def _reference_value_ok(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, float):
+        return not math.isnan(value)
+    text = str(value).strip()
+    return text.upper() not in _MISSING_TEXT_VALUES
+
+
+def _collect_reference_values(items, meta) -> dict[str, str]:
+    meta = meta or {}
+    found: dict[str, str] = {}
+    for field in REFERENCE_FIELDS:
+        candidates = [meta.get(field)]
+        candidates.extend((row or {}).get(field) for row in (items or []))
+        for value in candidates:
+            if _reference_value_ok(value):
+                found[field] = str(value).strip()
+                break
+    return found
+
+
+def _missing_reference_fields(items, meta) -> list[str]:
+    found = _collect_reference_values(items, meta)
+    return [field for field in REFERENCE_FIELDS if field not in found]
+
+
+def _has_any_reference_data(items, meta) -> bool:
+    return bool(_collect_reference_values(items, meta))
+
+
+def _append_parse_warn_token(row: dict, token: str) -> None:
+    if not token:
+        return
+    existing = str(row.get("ParseWarn") or "")
+    tokens = [part for part in re.split(r"[;|]", existing) if part]
+    if token not in tokens:
+        tokens.append(token)
+    row["ParseWarn"] = ";".join(tokens)
+
+
+def _set_trace_warning(trace_entry: dict, code: str, message: str, missing_fields: list[str] | None = None, action: str = "") -> None:
+    codes = [part for part in str(trace_entry.get("WarningCode") or "").split(";") if part]
+    messages = [part for part in str(trace_entry.get("WarningMessage") or "").split(" | ") if part]
+    actions = [part for part in str(trace_entry.get("DiagnosticAction") or "").split(" | ") if part]
+    if code and code not in codes:
+        codes.append(code)
+    if message and message not in messages:
+        messages.append(message)
+    trace_entry["WarningCode"] = ";".join(codes)
+    trace_entry["WarningMessage"] = " | ".join(messages)
+    if missing_fields:
+        trace_entry["MissingReferenceFields"] = ",".join(missing_fields)
+    if action and action not in actions:
+        actions.append(action)
+    if actions:
+        trace_entry["DiagnosticAction"] = " | ".join(actions)
+
+
+def _register_page_warning(
+    errors: list[dict],
+    trace_entry: dict,
+    *,
+    pdf_name: str,
+    page: int,
+    detected: str,
+    parser_id: str | None,
+    items_count: int,
+    code: str,
+    message: str,
+    missing_fields: list[str] | None = None,
+    action: str = "",
+) -> None:
+    _set_trace_warning(trace_entry, code, message, missing_fields, action)
+    rec = {
+        "pdf": pdf_name,
+        "page": page,
+        "detected": detected,
+        "parser_id": parser_id or "generic",
+        "items": items_count,
+        "severity": "WARN",
+        "code": code,
+        "msg": message,
+    }
+    if missing_fields:
+        rec["missing_fields"] = ",".join(missing_fields)
+    if action:
+        rec["action"] = action
+    errors.append(rec)
+
+
 # GUI opcional (solo para elegir rutas cuando no se pasan por CLI)
 try:
     import tkinter as tk
@@ -1621,6 +1716,10 @@ def process_pdf(pdf_path: Path,
                     "TriggerReason": "",
                     "Stage": stage_label,
                     "OcrForceAll": ocr_force_all,
+                    "WarningCode": "",
+                    "WarningMessage": "",
+                    "MissingReferenceFields": "",
+                    "DiagnosticAction": "",
                 }
                 trace_reasons: list[str] = []
                 skip_page = False
@@ -1764,9 +1863,21 @@ def process_pdf(pdf_path: Path,
                             break
                         parser_id_eff = parser_id or (pinfo["id"] if pinfo else "generic")
                         items = [_make_fallback_item(text or "", proveedor, parser_id_eff, i, pdf_path.name, meta=meta)]
-                        errors.append({"pdf": pdf_path.name, "page": i, "detected": proveedor,
-                                       "parser_id": parser_id_eff, "items": 1,
-                                       "msg": "Fallback anadido - detectado sin lineas parseadas"})
+                        _register_page_warning(
+                            errors,
+                            trace_entry,
+                            pdf_name=pdf_path.name,
+                            page=i,
+                            detected=proveedor,
+                            parser_id=parser_id_eff,
+                            items_count=1,
+                            code="PARSER_SIN_LINEAS",
+                            message=(
+                                "PARSER_SIN_LINEAS: proveedor detectado pero el parser no obtuvo "
+                                "lineas; se ha anadido una linea fallback para revision manual."
+                            ),
+                            action="Revisar parser del proveedor y texto extraido de la pagina.",
+                        )
                         fallback_used = True
                         needs_required = False
 
@@ -1864,6 +1975,46 @@ def process_pdf(pdf_path: Path,
                 if page_used_ocr:
                     meta["OcrPipeline"] = "+".join(ocr_stages) or "ocr"
 
+                if proveedor == "DESCONOCIDO":
+                    for row in items or []:
+                        _append_parse_warn_token(row, "proveedor_no_detectado")
+                    _register_page_warning(
+                        errors,
+                        trace_entry,
+                        pdf_name=pdf_path.name,
+                        page=i,
+                        detected=proveedor,
+                        parser_id=parser_id or "generic",
+                        items_count=nitems,
+                        code="PROVEEDOR_NO_DETECTADO",
+                        message=(
+                            "PROVEEDOR_NO_DETECTADO: no se ha podido identificar el proveedor; "
+                            "se usa el parser generico y la pagina requiere revision/onboarding."
+                        ),
+                        action="Crear alias de deteccion o parser especifico si el documento es valido.",
+                    )
+                elif not _has_any_reference_data(items, meta):
+                    missing_reference_fields = _missing_reference_fields(items, meta)
+                    for row in items or []:
+                        _append_parse_warn_token(row, "referencias_no_detectadas")
+                    _register_page_warning(
+                        errors,
+                        trace_entry,
+                        pdf_name=pdf_path.name,
+                        page=i,
+                        detected=proveedor,
+                        parser_id=parser_id or "generic",
+                        items_count=nitems,
+                        code="REFERENCIAS_NO_DETECTADAS",
+                        message=(
+                            "REFERENCIAS_NO_DETECTADAS: proveedor detectado pero no se obtuvo "
+                            "ningun dato de referencia "
+                            "(AlbaranNumero, FechaAlbaran ni SuPedidoCodigo)."
+                        ),
+                        missing_fields=missing_reference_fields,
+                        action="Revisar cabecera del parser y posibles reglas OCR/normalizacion.",
+                    )
+
                 try:
                     final_text = page.extract_text() or base_text
                 except Exception:
@@ -1913,14 +2064,19 @@ def process_pdf(pdf_path: Path,
                         }
                     )
 
-                if proveedor == "DESCONOCIDO":
-                    errors.append({"pdf": pdf_path.name, "page": i, "detected": proveedor,
-                                   "parser_id": parser_id or "generic", "items": nitems,
-                                   "msg": "Proveedor DESCONOCIDO"})
-                elif nitems == 0:
-                    errors.append({"pdf": pdf_path.name, "page": i, "detected": proveedor,
-                                   "parser_id": parser_id or "generic", "items": 0,
-                                   "msg": "Detectado pero sin lineas parseadas"})
+                if proveedor != "DESCONOCIDO" and nitems == 0:
+                    _register_page_warning(
+                        errors,
+                        trace_entry,
+                        pdf_name=pdf_path.name,
+                        page=i,
+                        detected=proveedor,
+                        parser_id=parser_id or "generic",
+                        items_count=0,
+                        code="PARSER_SIN_LINEAS",
+                        message="PARSER_SIN_LINEAS: proveedor detectado pero no se parseo ninguna linea.",
+                        action="Revisar parser del proveedor y texto extraido de la pagina.",
+                    )
 
                 yield items, meta
                 if nitems:
@@ -2118,7 +2274,9 @@ def _finalize_run_outputs(state: dict, logger: logging.Logger | None) -> dict:
     try:
         df_err = pd.DataFrame(errors) if errors else pd.DataFrame(columns=["pdf", "page", "detected", "parser_id", "items", "msg"])
         if not df_detail.empty and "ParseWarn" in df_detail.columns:
-            df_fb = df_detail[df_detail["ParseWarn"] == "fallback_no_parse"].copy()
+            df_fb = df_detail[
+                df_detail["ParseWarn"].astype(str).str.contains(r"\bfallback_no_parse\b", regex=True, na=False)
+            ].copy()
         else:
             df_fb = pd.DataFrame()
         err_path = out_dir / "albaranes_errores.xlsx"

@@ -272,6 +272,10 @@ TRACE_OUTPUT = {
         "EntropyPre",
         "OcrTriggered",
         "TriggerReason",
+        "WarningCode",
+        "WarningMessage",
+        "MissingReferenceFields",
+        "DiagnosticAction",
     ],
 }
 
