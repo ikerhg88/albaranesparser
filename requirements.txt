@@ -2,13 +2,13 @@ pandas>=2.0
 numpy>=1.24
 pdfplumber>=0.10
 XlsxWriter>=3.1
-
-ocrmypdf>=15.0
-python-doctr[torch]==0.8.1
+Pillow>=10.0
 pypdfium2>=4.20
 opencv-python-headless>=4.8
 
-# Torch stack (CPU wheels via PyTorch index)
-torch==2.2.2
-torchvision==0.17.2
-torchaudio==2.2.2
+# OCR soportado en produccion:
+# - Tesseract como binario externo integrado o instalado en PATH.
+#
+# OCRmyPDF y Doctr se mantienen solo como motores experimentales opcionales.
+# No deben instalarse como dependencia base porque arrastran binarios/modelos
+# pesados y no son necesarios para la configuracion validada.

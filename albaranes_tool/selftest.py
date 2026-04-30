@@ -165,6 +165,33 @@ def _package_probe(name: str) -> dict:
         return {"name": name, "ok": False, "error": repr(exc)}
 
 
+def _classify_optional_ocr(config: dict | None) -> dict:
+    packages = {pkg["name"]: pkg for pkg in (
+        _package_probe("ocrmypdf"),
+        _package_probe("doctr"),
+        _package_probe("torch"),
+    )}
+    ocr_cfg = ((config or {}).get("OCR_CONFIG") or {})
+    return {
+        "production_engine": "tesseract",
+        "experimental_engines": {
+            "ocrmypdf": {
+                "configured_enabled": bool((ocr_cfg.get("ocrmypdf") or {}).get("enabled", False)),
+                "installed": bool(packages["ocrmypdf"].get("ok")),
+                "status": "available_experimental" if packages["ocrmypdf"].get("ok") else "not_installed",
+                "note": "Requires OCRmyPDF Python package plus external binaries such as qpdf/Ghostscript/Tesseract.",
+            },
+            "doctr": {
+                "configured_enabled": bool((ocr_cfg.get("doctr") or {}).get("enabled", False)),
+                "installed": bool(packages["doctr"].get("ok")),
+                "torch_installed": bool(packages["torch"].get("ok")),
+                "status": "available_experimental" if packages["doctr"].get("ok") else "not_installed",
+                "note": "Requires python-doctr, PyTorch and model files; not part of the validated Windows release.",
+            },
+        },
+    }
+
+
 def _collect_environment(base_dir: Path, config: dict | None) -> dict:
     env_keys = [
         "ALBARANES_DATA_DIR",
@@ -190,6 +217,7 @@ def _collect_environment(base_dir: Path, config: dict | None) -> dict:
             _package_probe(name)
             for name in ("pandas", "numpy", "pdfplumber", "PIL", "pypdfium2", "cv2", "torch", "doctr", "ocrmypdf")
         ],
+        "optional_ocr": _classify_optional_ocr(config),
     }
 
 
@@ -301,6 +329,13 @@ def _write_report_files(report_dir: Path, report: dict) -> None:
     lines.append(f"Path: {(tess.get('resolve') or {}).get('path')}")
     if not tess.get("ok"):
         lines.append(f"Error: {(tess.get('resolve') or {}).get('error') or (tess.get('ocr') or {}).get('stderr')}")
+    lines.append("")
+    lines.append("[Optional OCR Engines]")
+    optional = ((report.get("environment") or {}).get("optional_ocr") or {}).get("experimental_engines") or {}
+    for name, info in optional.items():
+        lines.append(
+            f"{name}: installed={info.get('installed')} configured_enabled={info.get('configured_enabled')} status={info.get('status')}"
+        )
     lines.append("")
     lines.append("[Pipeline]")
     pipe = report.get("pipeline", {})

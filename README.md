@@ -6,7 +6,7 @@ Extractor multiproveedor de albaranes en PDF para generar un Excel maestro norma
 
 - Version de release Windows: `1.10.0`
 - OCR operativo por defecto: `Tesseract`, modo automatico, `psm=11`
-- OCRmyPDF y Doctr no se muestran en la GUI ni se activan por defecto
+- OCRmyPDF y Doctr quedan como motores experimentales opcionales, fuera de la instalacion normal
 - Instalador Windows con ruta elegible, versionado y desinstalador
 - Datos/configuracion separados del programa para permitir actualizaciones sin borrar ajustes
 

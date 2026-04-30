@@ -19,12 +19,28 @@ Operativo:
 
 - Tesseract
 
-No operativo en esta version:
+Experimentales, no soportados en produccion:
 
 - OCRmyPDF
 - Doctr
 
-Por eso no aparecen en el menu de la GUI. Las claves internas siguen existiendo en `config.py` con `enabled=false` por compatibilidad con configuraciones antiguas.
+Por eso no aparecen en el menu de la GUI ni se instalan con `requirements.txt`. Las claves internas siguen existiendo en `config.py` con `enabled=false` por compatibilidad con configuraciones antiguas y para pruebas controladas.
+
+Si se quiere comparar motores en laboratorio, usar:
+
+```powershell
+python -m pip install -r requirements-ocr-experimental.txt
+```
+
+No activar esos motores para una distribucion hasta que pasen regresion completa por semanas y generen mejor resultado global que Tesseract automatico.
+
+### OCRmyPDF
+
+Puede tener sentido solo si se quiere crear un PDF intermedio con capa de texto. En Windows no basta con instalar el paquete Python: necesita dependencias externas como Tesseract, qpdf y Ghostscript. Si alguna falta, el flujo falla antes de aportar texto util.
+
+### Doctr
+
+Puede tener sentido para investigacion, pero no como default: arrastra PyTorch/modelos, puede descargar pesos, aumenta mucho el instalador y no estaba disponible en el entorno validado. Ademas, su salida no garantiza mejor estructura para albaranes tabulares que Tesseract con reglas de proveedor.
 
 ## Diagnostico De Instalacion
 
@@ -49,6 +65,7 @@ Comprueba:
 - PDF sintetico de prueba;
 - pipeline real contra ese PDF;
 - presencia/version de paquetes Python relevantes.
+- estado de OCRmyPDF/Doctr como motores experimentales opcionales.
 
 Archivos generados:
 

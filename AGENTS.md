@@ -8,7 +8,7 @@ Albaranes Parser extracts structured delivery-note data from supplier PDFs and w
 
 - Release line: `1.10.0`.
 - Default OCR strategy: automatic Tesseract OCR with `psm=11` when text extraction is insufficient.
-- OCRmyPDF and Doctr are intentionally not exposed in the GUI because they were not reliable in the tested Windows setup.
+- OCRmyPDF and Doctr are experimental optional engines only. Do not add them back to the normal installer, GUI, or base requirements unless they beat the Tesseract baseline in full weekly regression.
 - Do not hardcode page numbers, delivery-note numbers, supplier-specific one-off values, or master corrections. Prefer reusable parser rules, normalization, and OCR cleanup.
 
 ## Important Paths

@@ -95,7 +95,7 @@ Configuracion por defecto:
 - `psm=11`;
 - sin segunda pasada OCR.
 
-OCRmyPDF y Doctr no se consideran opciones operativas en esta version y no aparecen en la GUI.
+OCRmyPDF y Doctr no se consideran opciones operativas de produccion en esta version y no aparecen en la GUI. El codigo conserva soporte interno experimental con `enabled=false`; las dependencias viven en `requirements-ocr-experimental.txt` para pruebas comparativas, no para instalacion normal.
 
 ## Actualizaciones
 

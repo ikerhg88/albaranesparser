@@ -1,0 +1,10 @@
+# Motores OCR experimentales.
+#
+# No usar para la instalacion normal ni para el build de produccion.
+# Instalar solo en un entorno de pruebas cuando se quiera comparar motores OCR.
+
+ocrmypdf>=15.0
+python-doctr[torch]>=0.8.1
+
+# Doctr usa PyTorch. Se recomienda instalar ruedas CPU/GPU acordes al equipo
+# desde las instrucciones oficiales de PyTorch antes de instalar python-doctr.
