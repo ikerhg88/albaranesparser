@@ -135,3 +135,29 @@ Debe actualizarse antes de cerrar cualquier commit nuevo.
   - `scripts/update_commit_diary.py`
   - `tracking/logs/commit_diary.md`
 
+### e79ccb7 - Add Semana 11 supplier parsers
+
+- Fecha: 2026-04-30T16:51:10+02:00
+- Autor: codexikerhg
+- Tipo: parsers y onboarding proveedores
+- Resumen: incorpora parsers HILTI, ESMERALDA y AUTOMATION24 para SEMANA_11 y reduce la comparativa de 51 a 1 error critico. Refuerza reglas generales en TXOFRE, ELEKTRA, SIMON, LEYCOLAN, GABYL, SALTOKI, SEMEGA, ALKAIN, BERDIN y ELICETXE sin hardcodear paginas.
+- Validacion: `python -m py_compile main.py config.py parsers/*.py`; `python -m pytest` con 21 tests pasados; runs y comparativas SEMANA_05, SEMANA_06, SEMANA_07, SEMANA_09, SEMANA_10 y SEMANA_11. SEMANA_11 final queda en `TOTAL_CRITICAL_ERRORS=1`.
+- Impacto/Riesgo: los proveedores nuevos quedan sin errores criticos en SEMANA_11. Queda un residual BERDIN p.53 sin parchear porque el PDF indica 19,64 y el master corregido espera 58,91. BERDIN permite ahora pedidos textuales cortos, validado contra semanas historicas.
+- Archivos:
+  - `config.py`
+  - `parsers/__init__.py`
+  - `parsers/alkain.py`
+  - `parsers/automation24.py`
+  - `parsers/berdin.py`
+  - `parsers/elektra.py`
+  - `parsers/elicetxe.py`
+  - `parsers/esmeralda.py`
+  - `parsers/gabyl.py`
+  - `parsers/hilti.py`
+  - `parsers/leycolan.py`
+  - `parsers/saltoki.py`
+  - `parsers/semega.py`
+  - `parsers/simon.py`
+  - `parsers/txofre.py`
+  - `tracking/logs/diario_semana11_codex.md`
+
