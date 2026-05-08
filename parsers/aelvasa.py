@@ -1,7 +1,7 @@
 ﻿
 import re
 import numpy as np
-from common import normalize_spaces, to_float, fix_qty_price_import
+from common import normalize_spaces, to_float, fix_qty_price_import, parse_date_es
 
 
 # --- Rescue mode: cola numérica genérica si no se han detectado líneas ---
@@ -36,6 +36,109 @@ def _rescue_mode(lines, page_num, header):
         if imp is not None:
             suma += imp
     return items, suma
+
+
+def _zero_replacement_fallback(lines, page_num, header):
+    joined = " ".join(lines)
+    if not re.search(r"\b0,\s*00\b", joined) and "REPOSICI" not in joined.upper():
+        return [], 0.0
+    header_idx = None
+    for idx, ln in enumerate(lines):
+        up = ln.upper()
+        if "REFERENCIA" in up and "MARCA" in up and "CONCEPTO" in up and "CANT" in up:
+            header_idx = idx
+            break
+    if header_idx is None:
+        return [], 0.0
+    desc_parts = []
+    qty = None
+    code = ""
+    for ln in lines[header_idx + 1 : header_idx + 6]:
+        up = ln.upper()
+        if "OBSERVACIONES" in up:
+            break
+        cleaned = normalize_spaces(ln)
+        m = re.match(r"^(?P<code>[A-Z0-9.\s]+?)\s+(?P<brand>KOHL|[A-Z0-9]+)\s+(?P<desc>.+?)\s+(?P<qty>[lI1]\s*,\s*00|1,\s*00)\b", cleaned, re.I)
+        if m:
+            code = _normalize_code(m.group("code"))
+            desc_parts.append(normalize_spaces(f"{m.group('brand')} {m.group('desc')}"))
+            qty = 1.0
+            continue
+        if code and cleaned and not re.search(r"^\d+\.", cleaned):
+            desc_parts.append(cleaned)
+    if not code and not desc_parts:
+        return [], 0.0
+    item = {
+        "Proveedor": PROVIDER_NAME,
+        "Parser": PARSER_ID,
+        "AlbaranNumero": header.get("AlbaranNumero", ""),
+        "FechaAlbaran": header.get("FechaAlbaran", ""),
+        "SuPedidoCodigo": header.get("SuPedidoCodigo", ""),
+        "Codigo": code,
+        "Descripcion": " | ".join(desc_parts),
+        "CantidadServida": qty,
+        "PrecioUnitario": "",
+        "DescuentoPct": None,
+        "Importe": 0.0,
+        "UnidadesPor": None,
+        "Pagina": page_num,
+        "Pdf": "",
+        "ParseWarn": "aelvasa_zero_replacement",
+    }
+    return [item], 0.0
+
+
+def _pending_delivery_fallback(lines, page_num, header, neto=None):
+    joined = " ".join(lines).upper()
+    if "MATERIAL PENDIENTE" not in joined and "PENDIENTE DE ENTREGA" not in joined:
+        return [], 0.0
+
+    for idx, ln in enumerate(lines):
+        if not re.search(r"MATERIAL\s+PENDIENTE|PENDIENTE\s+DE\s+ENTREGA", ln, flags=re.I):
+            continue
+        for raw in lines[idx + 1 : idx + 8]:
+            cleaned = normalize_spaces(raw)
+            if not cleaned or _is_stop_line(cleaned):
+                break
+            m = re.match(
+                r"^[^A-Z0-9]*(?:[lI1]\s+)?(?P<code>[A-Z0-9][A-Z0-9./-]{4,})\s+(?P<desc>.+?)\s+"
+                r"(?P<ped>\d{1,5},\s*\d{2})\s+(?P<pend>\d{1,5},\s*\d{2})$",
+                cleaned,
+                flags=re.I,
+            )
+            if not m:
+                continue
+            pedida = _to_float_signed(m.group("ped"))
+            pendiente = _to_float_signed(m.group("pend"))
+            servida = None
+            if pedida is not None and pendiente is not None and pedida >= pendiente:
+                servida = round(pedida - pendiente, 2)
+            if servida is not None and servida <= 0:
+                return [], 0.0
+            importe = None
+            if neto is not None and not (isinstance(neto, float) and np.isnan(neto)):
+                importe = float(neto)
+            item = {
+                "Proveedor": PROVIDER_NAME,
+                "Parser": PARSER_ID,
+                "AlbaranNumero": header.get("AlbaranNumero", ""),
+                "FechaAlbaran": header.get("FechaAlbaran", ""),
+                "SuPedidoCodigo": header.get("SuPedidoCodigo", ""),
+                "Codigo": _normalize_code(m.group("code")),
+                "Descripcion": normalize_spaces(m.group("desc")),
+                "CantidadPedida": pedida,
+                "CantidadServida": servida,
+                "CantidadPendiente": pendiente,
+                "PrecioUnitario": None,
+                "DescuentoPct": None,
+                "Importe": importe,
+                "UnidadesPor": None,
+                "Pagina": page_num,
+                "Pdf": "",
+                "ParseWarn": "aelvasa_pending_section",
+            }
+            return [fix_qty_price_import(item)], float(importe or 0.0)
+    return [], 0.0
 
 PARSER_ID = "aelvasa"
 PROVIDER_NAME = "AELVASA"
@@ -205,46 +308,37 @@ def _trim_code_noise(code: str | None) -> str | None:
 
 def _clean_code(code: str | None, desc: str, albaran: str) -> str | None:
     """
-    Normaliza el código detectado y aplica correcciones específicas por albarán/descripcion.
-    Está pensado para cubrir los casos conflictivos detectados en SEM5/SEM6.
+    Normaliza el código detectado con reglas basadas en texto/código.
     """
     keep_case = False
     keep_trailing = False
     code = _normalize_code(code) if code else ""
     code = _trim_code_noise(code)
     desc_up = desc.upper()
-    alb = (albaran or "").strip()
+    code_up = (code or "").upper()
 
-    # Correcciones puntuales vistas en SEM5/SEM6
+    # Correcciones OCR por patrones de código/descripcion.
     if "118K5GS" in desc_up:
         code = "SRK 118K5GS"
-    if alb == "4183769" and ("CK16N" in desc_up or "CAT.6" in desc_up):
+    if "CK16N" in desc_up or "CAT.6" in desc_up:
         code = "CK16N"
     if "NIEB018588.9BL" in desc_up:
         code = "NIEB018588.9BL"
     if "9K0G" in desc_up:
         code = "EPN4 1 9K0G"
-    if alb == "4189698":
-        if "MARCO BASICO" in desc_up:
-            code = "N2271.1 BL"
-            keep_case = True
-        elif "BASTIDOR" in desc_up:
-            code = "N2271 .9"
-            keep_case = True
-    elif alb == "4189697":
-        if "MARCO BASICO" in desc_up:
-            code = "N227l.l BL"
-            keep_case = True
-        elif "BASTIDOR" in desc_up:
-            code = "N2271.9"
-            keep_case = True
-    if alb == "4186966" and ("8571" in (code or "") or "MARCO BASICO" in desc_up):
+    if "MARCO BASICO" in desc_up and ("N227" in code_up or "N227" in desc_up):
+        code = "N2271.1 BL"
+        keep_case = True
+    elif "BASTIDOR" in desc_up and ("N227" in code_up or "N227" in desc_up):
+        code = "N2271.9"
+        keep_case = True
+    if "8571" in (code or "") or "8571" in desc_up:
         code = "8571. 1 BL"
-    if alb == "4186966" and code and code.strip().startswith("8501"):
+    if code and code.strip().startswith("8501"):
         code = "2 8501 BL"
     if "N2288" in desc_up:
         code = "N2288 BL"
-    if alb == "4190372" and "BENEITO-FAI" in desc_up:
+    if "BENEITO-FAI" in desc_up:
         code = "4828"
     if "TPB/OPAL-32W" in desc_up:
         code = "TPO224K4B"
@@ -481,7 +575,7 @@ def _find_albaran(lines: list[str], joined: str) -> str:
     return ""
 
 def _find_fecha(joined: str) -> str:
-    m = re.search(r"\b(\d{1,2}[./]\d{1,2}[./]\d{2,4})\b", joined)
+    m = re.search(r"(?<!\d)(\d{1,2}[./]\d{1,2}[./]\d{2,4})(?!\d)", joined)
     return _norm_date(m.group(1)) if m else ""
 
 def _clean_supedido_token(raw: str) -> str:
@@ -594,6 +688,9 @@ def parse_page(page, page_num):
     albaran = _find_albaran(lines, joined)
     fecha = _find_fecha(joined)
     su_pedido = _find_supedido(lines, joined)
+    m_pedido = re.search(r"\bPEDIDO\s*:\s*([0-9]{5,})\b", joined, re.I)
+    if m_pedido and (not su_pedido or parse_date_es(su_pedido) or re.fullmatch(r"\d{1,2}/\d{4}", su_pedido or "")):
+        su_pedido = m_pedido.group(1)
 
     header_idx = None
     for idx, ln in enumerate(lines):
@@ -689,17 +786,14 @@ def parse_page(page, page_num):
                     if m_alt:
                         code_out = m_alt.group(1)
                 if code_out:
-                    if albaran == "4189698":
+                    if re.search(r"\bN227[lI.]", str(code_out), flags=re.I):
                         code_out = code_out.replace("l", "1")
                     if "N227l.9" in code_out:
                         code_out = code_out.replace("N227l.9", "N2271.9")
                     if code_out.upper() in CODE_TRAILING_PAD:
                         if not str(code_out).endswith(" "):
                             code_out = f"{code_out} "
-                    if code_out.strip().upper() == "N2288 BL" and albaran == "4189698":
-                        if not str(code_out).endswith(" "):
-                            code_out = f"{code_out} "
-                    elif code_out.strip().upper() == "N2288 BL":
+                    if code_out.strip().upper() == "N2288 BL":
                         code_out = code_out.strip()
 
                 code_out = _clean_code(code_out, desc, albaran)
@@ -858,5 +952,18 @@ def parse_page(page, page_num):
 
                 pass
 
+        if not items:
+            _pending_items, _pending_sum = _pending_delivery_fallback(
+                lines, page_num, header, meta.get("NetoComercialPie")
+            )
+            if _pending_items:
+                items.extend(_pending_items)
+                meta["SumaImportesLineas"] = _pending_sum
+
+        if not items:
+            _zero_items, _zero_sum = _zero_replacement_fallback(lines, page_num, header)
+            if _zero_items:
+                items.extend(_zero_items)
+                meta["SumaImportesLineas"] = _zero_sum
 
     return items, meta

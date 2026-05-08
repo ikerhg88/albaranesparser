@@ -1,10 +1,18 @@
 import re
+import unicodedata
 import numpy as np
 from common import normalize_spaces, to_float, parse_date_es, fix_qty_price_import, normalize_supedido_code
 
 PARSER_ID = "txofre"
 PROVIDER_NAME = "TXOFRE"
-BRAND_ALIASES = ["TXOFRE", "SUMINISTROS INDUSTRIALES TXOFRE"]
+BRAND_ALIASES = [
+    "TXOFRE",
+    "SUMINISTROS INDUSTRIALES TXOFRE",
+    "943 46 63 94",
+    "PASEO UBARBURU",
+    "PASEO UBAABURU",
+    "POLIGONO 27 - MARTUTENE",
+]
 
 ALB_RE = re.compile(r"\b(20\d{2}/\d{2}/\d{5,})\b")
 ALB_LOOSE_RE = re.compile(
@@ -53,9 +61,11 @@ def _extract_header(text: str):
             break
     if not albaran:
         # OCR con dígitos seguidos (ej. 212601001337)
-        m2 = re.search(r"\b([0-9lI]{10,12})\b", text)
-        if m2:
-            token = m2.group(1).replace("l", "1").replace("I", "1")
+        compact_matches = list(re.finditer(r"\b([0-9lI]{10,12})\b", text))
+        if compact_matches:
+            candidates = [m.group(1).replace("l", "1").replace("I", "1") for m in compact_matches]
+            preferred = [c for c in candidates if len(c) == 12 and c.startswith(("20", "21"))]
+            token = preferred[0] if preferred else max(reversed(candidates), key=candidates.count)
             if len(token) == 12:
                 # 212601001337 -> 2026/01/001337
                 token = f"2026/{token[4:6]}/{token[6:]}"
@@ -118,6 +128,7 @@ def _extract_header(text: str):
             t = re.sub(r"H260L?26", "H2600126", t)
         if t == "H260":
             t = "H2600126"
+        t = re.sub(r"^A[LI](?=\d)", "A1", t)
         return t
 
     # 1) Después del CIF A20074738 hasta antes de TEL/TF/FAX
@@ -160,6 +171,10 @@ def _extract_header(text: str):
     rc_supedido = _extract_rc_supedido(text)
     if rc_supedido and not re.match(r"^[AH]\d{6}", supedido or "", flags=re.I):
         supedido = rc_supedido
+    if not fecha and supedido:
+        m_sup_fecha = re.match(r"^[AH](\d{2})(\d{2})(\d{2})(?:/|_|$)", supedido, flags=re.I)
+        if m_sup_fecha:
+            fecha = f"{m_sup_fecha.group(1)}/{m_sup_fecha.group(2)}/20{m_sup_fecha.group(3)}"
     return albaran, fecha, normalize_supedido_code(supedido)
 
 
@@ -184,10 +199,34 @@ def _extract_rc_supedido(text: str) -> str:
 
 def _num(tok: str):
     tok = tok or ""
+    tok = re.sub(r"^[lI|](?=\d)", "1", tok)
+    tok = re.sub(r"^[Oo](?=\d)", "0", tok)
     tok = tok.replace(".", "")
     tok = tok.replace("€", "")
     tok = re.sub(r"^[^0-9-]+", "", tok)
     return to_float(tok)
+
+
+def _clean_numeric_token(tok: str) -> str:
+    tok = (tok or "").strip().strip(";:")
+    for noise in ("\u00b7", "\u00c2\u00b7", "\u20ac", "\u00e2\u201a\u00ac"):
+        tok = tok.replace(noise, "")
+    tok = tok.replace("Ã‚Â·", "").replace("Â·", "").replace("â‚¬", "")
+    tok = re.sub(r"^[jJ](?=[,.]\d)", "1", tok)
+    tok = re.sub(r"^[lI|](?=[\d,.])", "1", tok)
+    tok = re.sub(r"^[Oo](?=[\d,.])", "0", tok)
+    return tok
+
+
+def _is_numeric_token(tok: str) -> bool:
+    return re.fullmatch(r"[0-9][0-9.,]*", _clean_numeric_token(tok)) is not None
+
+
+def _num_col(tok: str):
+    tok = _clean_numeric_token(tok)
+    if "," not in tok and re.fullmatch(r"\d{1,4}\.\d{1,2}", tok):
+        tok = tok.replace(".", ",")
+    return _num(tok)
 
 
 def _normalize_code(code: str | None) -> str | None:
@@ -231,6 +270,15 @@ def _parse_row(ln: str):
     ln = normalize_spaces(ln)
     if not ln:
         return None
+    ln = re.sub(r"^\s*[jJ]\s+(?=TES)", "", ln)
+    ln = re.sub(r"\bTES[oO][:;]?[lI1]\b", "TES04", ln, flags=re.I)
+    ln = re.sub(r"(?<![A-Za-z0-9])[lI|](?=\d+[,.]\d)", "1", ln)
+    ln = re.sub(r"(?<![A-Za-z0-9])[Oo](?=\d+[,.]\d)", "0", ln)
+    first_word = re.search(r"\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9./-]{3,}\b", ln, re.I)
+    if first_word and first_word.start() > 0:
+        prefix = ln[: first_word.start()]
+        if len(prefix.strip()) <= 12 and not re.search(r"\d", prefix):
+            ln = ln[first_word.start() :]
     up = ln.upper()
     if re.search(r"\b(TOTAL|NETO|IMPONIBLE|IVA|CUOTA|IMPORTE NETO)\b", up):
         return None
@@ -275,12 +323,12 @@ def _parse_row(ln: str):
     numeric_idx = [
         i
         for i, t in enumerate(tokens[start_n:], start=start_n)
-        if re.fullmatch(r"[0-9][0-9.,]*", t.replace("Â·", "").replace("·", ""))
+        if _is_numeric_token(t)
     ]
     # si hay más de 2 números y el primero es muy grande (longitud), descartarlo
     while len(numeric_idx) >= 3:
-        val = _num(tokens[numeric_idx[0]])
-        nxt = _num(tokens[numeric_idx[1]])
+        val = _num_col(tokens[numeric_idx[0]])
+        nxt = _num_col(tokens[numeric_idx[1]])
         if val is not None and val > 50 and (nxt is not None and nxt <= 50):
             numeric_idx = numeric_idx[1:]
             continue
@@ -289,7 +337,8 @@ def _parse_row(ln: str):
     # --- Heurística principal: números con coma (formato ES) ---
     comma_matches = list(COMMA_NUM_RE.finditer(ln))
     qty = price = disc = imp = None
-    if len(comma_matches) >= 2:
+    prefer_numeric_tail = len(comma_matches) == 2 and len(numeric_idx) >= 3
+    if len(comma_matches) >= 2 and not prefer_numeric_tail:
         qty = _num(comma_matches[0].group(0))
         price = _num(comma_matches[1].group(0))
         imp = _num(comma_matches[-1].group(0))
@@ -308,24 +357,26 @@ def _parse_row(ln: str):
                     disc = dval
                     if qty is not None and price is not None:
                         imp = round(qty * price * (100 - disc) / 100, 2)
+            elif qty is not None and price is not None:
+                imp = round(qty * price, 2)
 
     # Fallback: secuencia cruda si faltan datos
     if qty is None or price is None or imp is None:
         if len(numeric_idx) < 2:
             return None
-        first_qty = _num(tokens[numeric_idx[0]])
+        first_qty = _num_col(tokens[numeric_idx[0]])
         # evitar interpretar longitudes como cantidad si no tenemos código
         if code_idx is None and first_qty is not None and first_qty > 50:
             return None
         qty = qty if qty is not None else first_qty
-        price = price if price is not None else (_num(tokens[numeric_idx[1]]) if len(numeric_idx) > 1 else None)
-        imp = imp if imp is not None else _num(tokens[numeric_idx[-1]])
+        price = price if price is not None else (_num_col(tokens[numeric_idx[1]]) if len(numeric_idx) > 1 else None)
+        imp = imp if imp is not None else _num_col(tokens[numeric_idx[-1]])
         if len(numeric_idx) >= 3 and disc is None:
-            maybe_disc = _num(tokens[numeric_idx[2]])
+            maybe_disc = _num_col(tokens[numeric_idx[2]])
             if maybe_disc is not None and maybe_disc <= 100 and numeric_idx[2] != numeric_idx[-1]:
                 disc = maybe_disc
             if len(numeric_idx) >= 4:
-                imp = _num(tokens[numeric_idx[-1]])
+                imp = _num_col(tokens[numeric_idx[-1]])
 
     if code_idx is None or (numeric_idx and code_idx > numeric_idx[0]) or not numeric_idx:
         code = ""
@@ -362,6 +413,21 @@ def _is_spurious_no_code_row(raw_line: str, concept: str) -> bool:
     return False
 
 
+def _looks_like_table_header(line: str) -> bool:
+    normalized = unicodedata.normalize("NFKD", line.upper())
+    compact = re.sub(
+        r"[^A-Z0-9]",
+        "",
+        "".join(ch for ch in normalized if not unicodedata.combining(ch)),
+    )
+    return (
+        "CANTIDAD" in compact
+        and "PRECIO" in compact
+        and "IMPORTE" in compact
+        and ("DESCRIP" in compact or "DESIPC" in compact or "DESIPCI" in compact)
+    )
+
+
 def parse_page(page, page_num, proveedor_detectado="TXOFRE"):
     text = page.extract_text() or ""
     lines = [normalize_spaces(ln) for ln in text.splitlines() if ln.strip()]
@@ -372,6 +438,12 @@ def parse_page(page, page_num, proveedor_detectado="TXOFRE"):
         (i for i, ln in enumerate(lines) if re.search(r"ART[IÍ]CULO.*DESCRIP", ln, re.I) and re.search(r"CANT", ln, re.I)),
         0,
     )
+    if header_idx == 0:
+        for idx, line in enumerate(lines):
+            if _looks_like_table_header(line):
+                header_idx = idx
+                break
+
     items = []
     suma = 0.0
 
@@ -385,11 +457,28 @@ def parse_page(page, page_num, proveedor_detectado="TXOFRE"):
         "TOTAL",
     )
 
+    def _compact_stop(line: str) -> bool:
+        normalized = unicodedata.normalize("NFKD", line.upper())
+        compact = re.sub(r"[^A-Z0-9]", "", "".join(ch for ch in normalized if not unicodedata.combining(ch)))
+        return any(marker in compact for marker in ("IMPORTENETO", "PORTENETO", "BASEIMPONIBLE", "TOTALALBARAN"))
+
+    def _footer_neto() -> float | None:
+        for idx, raw in enumerate(lines):
+            normalized = unicodedata.normalize("NFKD", raw.upper())
+            compact = re.sub(r"[^A-Z0-9]", "", "".join(ch for ch in normalized if not unicodedata.combining(ch)))
+            if "PORTENETO" not in compact and "IMPORTENETO" not in compact:
+                continue
+            for nxt in lines[idx + 1 : idx + 5]:
+                nums = COMMA_NUM_RE.findall(nxt)
+                if nums:
+                    return _num(nums[0])
+        return None
+
     i = header_idx + 1
     while i < len(lines):
         ln = lines[i]
         up = ln.upper()
-        if any(m in up for m in stop_markers):
+        if any(m in up for m in stop_markers) or _compact_stop(ln):
             break
         detail = _parse_row(ln)
         if detail:
@@ -426,6 +515,20 @@ def parse_page(page, page_num, proveedor_detectado="TXOFRE"):
                 suma += imp
         i += 1
 
+    neto_footer = _footer_neto()
+    if neto_footer is not None and items and abs(suma - neto_footer) > 0.05:
+        diff = round(neto_footer - suma, 2)
+        last = items[-1]
+        last_imp = last.get("Importe")
+        qty = last.get("CantidadServida")
+        if last_imp is not None and qty not in (None, 0) and abs(diff) <= max(20.0, abs(float(last_imp)) * 0.25):
+            new_imp = round(float(last_imp) + diff, 2)
+            if new_imp >= 0 or float(last_imp) < 0:
+                last["Importe"] = new_imp
+                last["PrecioUnitario"] = round(new_imp / float(qty), 4)
+                last["ParseWarn"] = normalize_spaces(f"{last.get('ParseWarn') or ''}; txofre_footer_reconciled".strip("; "))
+                suma = round(neto_footer, 2)
+
     meta = {
         "Proveedor": proveedor_detectado,
         "Parser": PARSER_ID,
@@ -433,7 +536,7 @@ def parse_page(page, page_num, proveedor_detectado="TXOFRE"):
         "FechaAlbaran": fecha,
         "SuPedidoCodigo": supedido,
         "SumaImportesLineas": suma,
-        "NetoComercialPie": np.nan,
+        "NetoComercialPie": np.nan if neto_footer is None else neto_footer,
         "TotalAlbaranPie": np.nan,
     }
 

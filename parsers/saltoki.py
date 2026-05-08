@@ -26,6 +26,10 @@ STOP_RE = re.compile(r"(TOTAL\s*:|NETO\s*:|TOTAL:\s*EUR|TOTAL\s+EUR|TODAS LAS ME
 IGNORED_RE = re.compile(r"^(Entrega en:|Contacto:|Servido por:|Agencia:|Ruta:|Paquetes:|FP:|POR SALTOKI|EL CLIENTE|C/|AV |ASTIGARRAGA|GIPUZKOA|TLF|Pag:)", re.I)
 ABONO_HEADER_RE = re.compile(r"CODIGO\s+CANTIDAD\s+CONCEPTO\s+PRECIO", re.I)
 ALNUM_CODE_RE = re.compile(r"(?P<code>[A-Z0-9]{7,})\s+(?P<rest>.+)", re.I)
+MATERIAL_ROW_RE = re.compile(
+    r"^(?P<code>\d{6,})\s+(?P<desc>.+?)\s+(?P<qty>-?\d{1,4}(?:[.,]\d{1,3})?)$",
+    re.I,
+)
 
 def _collapse_nums(s: str) -> str:
     s = re.sub(rf"({NUM})\s*-(?!\d)", r"-\1", s)
@@ -314,6 +318,62 @@ def _parse_standard_items(lines, page_num, albaran, fecha, su_pedido):
             suma = float(qty_only)
     return items, suma
 
+def _parse_material_separado(lines, page_num, albaran, fecha, su_pedido):
+    joined = " ".join(lines)
+    if "MATERIAL SEPARADO" not in _ascii(joined).upper():
+        return [], 0.0, albaran, fecha, su_pedido
+
+    doc_match = re.search(r"\b(\d{5,6}/\d+)\b", joined)
+    if doc_match:
+        albaran = doc_match.group(1)
+
+    date_match = re.search(r"\bFecha\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4})", joined, re.I)
+    if date_match:
+        fecha = _norm_date(date_match.group(1))
+
+    for ln in lines:
+        ref_match = re.search(r"[S5]/?Ref\s*:\s*(.+?)(?:\s+Comercial\b|$)", ln, re.I)
+        if ref_match:
+            raw_ref = normalize_spaces(ref_match.group(1)).strip()
+            if raw_ref:
+                su_pedido = _normalize_supedido(raw_ref)
+                break
+
+    start_idx = None
+    for idx, ln in enumerate(lines):
+        up = _ascii(ln).upper()
+        if "ARTICULO" in up and "DESCRIP" in up and "CANTIDAD" in up:
+            start_idx = idx + 1
+            break
+    if start_idx is None:
+        return [], 0.0, albaran, fecha, su_pedido
+
+    items = []
+    for ln in lines[start_idx:]:
+        up = _ascii(ln).upper()
+        if "FINAL MATERIAL SEPARADO" in up or "PEDIDO FINALIZADO" in up or "MS RELACIONADOS" in up:
+            break
+        row = MATERIAL_ROW_RE.match(normalize_spaces(ln))
+        if not row:
+            continue
+        items.append({
+            "Proveedor": PROVIDER_NAME,
+            "Parser": PARSER_ID,
+            "AlbaranNumero": albaran,
+            "FechaAlbaran": fecha,
+            "SuPedidoCodigo": su_pedido,
+            "Codigo": _normalize_code(row.group("code")),
+            "Descripcion": _clean_description(row.group("desc")),
+            "CantidadServida": _to_float(_clean_num_token(row.group("qty"))),
+            "PrecioUnitario": None,
+            "DescuentoPct": None,
+            "Importe": None,
+            "Pagina": page_num,
+            "Pdf": "",
+            "ParseWarn": "saltoki_material_separado_no_importe",
+        })
+    return items, 0.0, albaran, fecha, su_pedido
+
 def _parse_abono_items(lines, page_num, albaran, fecha, su_pedido):
     items, suma = [], 0.0
     header_idx = None
@@ -589,7 +649,13 @@ def parse_page(page, page_num, proveedor_detectado=None):
     fecha = _find_fecha(lines, joined)
     su_pedido = _normalize_supedido(_find_supedido(lines, joined))
 
-    if _is_abono_layout(lines):
+    material_items, material_suma, material_albaran, material_fecha, material_supedido = _parse_material_separado(
+        lines, page_num, albaran, fecha, su_pedido
+    )
+    if material_items:
+        items, suma = material_items, material_suma
+        albaran, fecha, su_pedido = material_albaran, material_fecha, material_supedido
+    elif _is_abono_layout(lines):
         items, suma = _parse_abono_items(lines, page_num, albaran, fecha, su_pedido)
     else:
         items, suma = _parse_standard_items(lines, page_num, albaran, fecha, su_pedido)

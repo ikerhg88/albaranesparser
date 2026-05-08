@@ -6,6 +6,7 @@ import unicodedata
 from pathlib import Path
 
 import numpy as np
+from PIL import ImageEnhance, ImageFilter, ImageOps
 
 from common import normalize_spaces, to_float
 from albaranes_tool.ocr_stage import _resolve_tesseract_path
@@ -192,6 +193,132 @@ def _find_supedido(joined: str) -> str:
     m2 = re.match(r"([A-Za-z0-9./\-]{4,30})", raw)
     return _normalize_supedido(m2.group(1) if m2 else "")
 
+
+def _is_blank_handwritten_form(lines: list[str], joined: str) -> bool:
+    up = joined.upper()
+    if "ALBARAN N" not in up or "SU PEDIDO" not in up:
+        return False
+    if "CODIGO" not in up or "CANTIDAD" not in up:
+        return False
+    if "TOTAL NETO" in up or "REF. PROV" in up:
+        return False
+    noisy_lines = sum(1 for ln in lines if len(ln) <= 3)
+    return noisy_lines >= max(10, len(lines) // 4)
+
+
+def _infer_year_from_pdf_path(page) -> int | None:
+    try:
+        pdf_path = str(getattr(page.pdf, "path", "") or getattr(page.pdf.stream, "name", "") or "")
+    except Exception:
+        return None
+    m = re.search(r"(?<!\d)(20\d{2})(?!\d)", pdf_path)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"(?<!\d)\d{1,2}[-_/]\d{1,2}[-_/](\d{2})(?!\d)", pdf_path)
+    if m:
+        yy = int(m.group(1))
+        return 2000 + yy if yy <= 69 else 1900 + yy
+    return None
+
+
+def _normalize_handwritten_date(raw: str, page) -> str:
+    m = re.search(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{1,2}|\d{4})", raw or "")
+    if not m:
+        return ""
+    day, month, year_s = m.groups()
+    year = int(year_s)
+    if len(year_s) == 2:
+        year = 2000 + year if year <= 69 else 1900 + year
+    pdf_year = _infer_year_from_pdf_path(page)
+    if pdf_year and abs(year - pdf_year) <= 3:
+        year = pdf_year
+    try:
+        return f"{int(day):02d}/{int(month):02d}/{year:04d}"
+    except Exception:
+        return ""
+
+
+def _ocr_handwritten_date(page) -> str:
+    if page is None:
+        return ""
+    try:
+        tesseract_cfg = ((OCR_CONFIG or {}).get("tesseract") or {}).get("cmd")
+        tesseract_cmd = _resolve_tesseract_path(tesseract_cfg)
+    except Exception:
+        return ""
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="gabyl_hand_date_"))
+    img_path = tmp_dir / "date.png"
+    out_base = tmp_dir / "ocr_date"
+    try:
+        width = float(getattr(page, "width", 0) or 0)
+        height = float(getattr(page, "height", 0) or 0)
+        if width <= 0 or height <= 0:
+            return ""
+        bbox = (width * 0.16, height * 0.245, width * 0.27, height * 0.31)
+        pil = page.within_bbox(bbox).to_image(resolution=800).original.convert("L")
+        pil = ImageOps.autocontrast(pil)
+        pil = ImageEnhance.Contrast(pil).enhance(3.0)
+        pil = pil.filter(ImageFilter.SHARPEN)
+        pil.save(img_path)
+        cmd = [
+            str(tesseract_cmd),
+            str(img_path),
+            str(out_base),
+            "-l",
+            "eng",
+            "--psm",
+            "6",
+            "--oem",
+            "1",
+            "-c",
+            "tessedit_char_whitelist=0123456789/",
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        txt_path = out_base.with_suffix(".txt")
+        if not txt_path.exists():
+            return ""
+        return _normalize_handwritten_date(txt_path.read_text(encoding="utf-8", errors="ignore"), page)
+    except Exception:
+        return ""
+    finally:
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _build_handwritten_review_item(lines: list[str], joined: str, page_num: int, page=None):
+    fecha = _find_fecha(joined) or _ocr_handwritten_date(page)
+    su_pedido = _find_supedido(joined)
+    item = {
+        "Proveedor": PROVIDER_NAME,
+        "Parser": PARSER_ID,
+        "AlbaranNumero": "",
+        "FechaAlbaran": fecha,
+        "SuPedidoCodigo": su_pedido,
+        "Codigo": f"UNK_P{page_num}_HAND",
+        "Descripcion": "Formulario GABYL manuscrito - revisar visualmente",
+        "CantidadServida": None,
+        "PrecioUnitario": "",
+        "DescuentoPct": None,
+        "Importe": None,
+        "Pagina": page_num,
+        "Pdf": "",
+        "ParseWarn": "gabyl_handwritten_review",
+    }
+    meta = {
+        "Proveedor": PROVIDER_NAME,
+        "Parser": PARSER_ID,
+        "AlbaranNumero": "",
+        "FechaAlbaran": fecha,
+        "SuPedidoCodigo": su_pedido,
+        "SumaImportesLineas": 0.0,
+        "NetoComercialPie": np.nan,
+        "TotalAlbaranPie": np.nan,
+    }
+    return [item], meta
+
 STOP_RE = re.compile(r"(Total\s+neto|C\s*=\s*Precio\s*x\s*100|FOR\s*-)", re.I)
 
 def _is_stop_line(s: str | None) -> bool:
@@ -217,6 +344,9 @@ def parse_page(page, page_num):
             lines.append(stripped)
     joined = " ".join(lines)
 
+    if _is_blank_handwritten_form(lines, joined):
+        return _build_handwritten_review_item(lines, joined, page_num, page)
+
     albaran = _find_albaran(lines, joined)
     if not albaran:
         albaran = _ocr_albaran_from_header(page)
@@ -233,7 +363,7 @@ def parse_page(page, page_num):
 
     if header_idx is None:
         for idx, ln in enumerate(lines):
-            canon_probe = _collapse_nums(ln)
+            canon_probe = _collapse_nums(ln).strip(" ,;:.-")
             canon_probe = re.sub(r"^\s*[lI|]\s+", " 1 ", canon_probe)
             canon_upper = canon_probe.upper()
             if re.match(r"^\s*[A-Z0-9][A-Z0-9.\-_/]*\s+", canon_upper) and NUM_RE.search(canon_probe):
@@ -256,7 +386,7 @@ def parse_page(page, page_num):
                 i += 1
                 continue
 
-            canon = _collapse_nums(ln_original)
+            canon = _collapse_nums(ln_original).strip(" ,;:.-")
             canon = re.sub(r"^\s*[lI|]\s+", " 1 ", canon)
             canon = re.sub(r"^\s*\d+\s+", " ", canon)
             canon_upper = canon.upper()
@@ -351,7 +481,7 @@ def parse_page(page, page_num):
                 nxt = lines[k]
                 if _is_stop_line(nxt):
                     break
-                nxt_canon = _collapse_nums(nxt)
+                nxt_canon = _collapse_nums(nxt).strip(" ,;:.-")
                 nxt_canon = re.sub(r"^\s*[lI|]\s+", " 1 ", nxt_canon)
                 if re.match(r"^\s*[A-Z0-9][A-Z0-9.\-_/]*\s+", nxt_canon, re.I) and NUM_RE.search(nxt_canon):
                     break

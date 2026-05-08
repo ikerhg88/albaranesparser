@@ -215,6 +215,112 @@ def _rescue_mode(lines, page_num, header):
             suma += imp
     return items, suma
 
+def _rescue_explicit_neto_line(lines, page_num, header):
+    items = []
+    suma = 0.0
+    albaran = header.get("AlbaranNumero", "")
+    fecha = header.get("FechaAlbaran", "")
+    su_pedido = header.get("SuPedidoCodigo", "")
+    row_re = re.compile(
+        rf"^\s*(?P<pos>\d+)\s+(?P<code>[0-9A-Za-z¡!.\-]+)\s+(?P<desc>.+?)\s+"
+        rf"(?P<qtys>(?:\d+\s+){{1,4}})(?P<precio>{NUM_DEC_2_4})\s+Neto\s+(?P<imp>{NUM_DEC_2})\b",
+        re.I,
+    )
+    for raw in lines:
+        clean = _ascii(_collapse_nums(raw))
+        clean = clean.replace("Â¡", "¡")
+        m = row_re.match(clean)
+        if not m:
+            continue
+        qty_tokens = re.findall(r"\d+", m.group("qtys") or "")
+        qty = _to_int_safe(qty_tokens[1] if len(qty_tokens) >= 2 else (qty_tokens[0] if qty_tokens else None))
+        raw_code = m.group("code").replace("¡", "1").replace("!", "1").replace("|", "1")
+        if re.fullmatch(r"[0-9.\-]+", raw_code):
+            raw_code = raw_code.replace("-", "").replace(".", "")
+        code = _normalize_code(raw_code)
+        desc = normalize_spaces(m.group("desc"))
+        if not code or _is_forbidden_description(desc) or _contains_forbidden_phone(desc):
+            continue
+        precio = _to_float_safe(m.group("precio"))
+        imp = _to_float_safe(m.group("imp"))
+        item = {
+            "Proveedor": PROVIDER_NAME,
+            "Parser": PARSER_ID,
+            "AlbaranNumero": albaran,
+            "FechaAlbaran": fecha,
+            "SuPedidoCodigo": su_pedido,
+            "Codigo": code,
+            "Descripcion": desc,
+            "CantidadServida": qty,
+            "PrecioUnitario": precio,
+            "DescuentoPct": 0.0,
+            "Importe": imp,
+            "Pagina": page_num,
+            "Pdf": "",
+            "ParseWarn": "berdin_explicit_neto_rescue",
+        }
+        items.append(fix_qty_price_import(item))
+        if imp is not None:
+            suma += imp
+    return items, suma
+
+def _rescue_single_code_footer(lines, page_num, header, neto_comercial):
+    if neto_comercial is None or (isinstance(neto_comercial, float) and np.isnan(neto_comercial)):
+        return [], 0.0
+    albaran = header.get("AlbaranNumero", "")
+    fecha = header.get("FechaAlbaran", "")
+    su_pedido = header.get("SuPedidoCodigo", "")
+    albaran_digits = re.sub(r"\D", "", albaran or "")
+    candidates: list[tuple[int, str]] = []
+    for idx, raw in enumerate(lines):
+        for m in re.finditer(r"\b(\d{8})\b", raw):
+            code = m.group(1)
+            if code == albaran_digits or code.startswith(("943", "948")) or len(set(code)) == 1:
+                continue
+            header_context = " ".join(lines[max(0, idx - 1) : min(len(lines), idx + 2)])
+            if "CIF" in _ascii(header_context.upper()):
+                continue
+            if _is_supedido_header_text(header_context) or "FECHA DE PEDIDO" in _ascii(header_context.upper()):
+                continue
+            candidates.append((idx, code))
+    unique_codes = sorted({code for _, code in candidates})
+    if len(unique_codes) != 1:
+        return [], 0.0
+    idx = next(i for i, code in candidates if code == unique_codes[0])
+
+    desc_parts: list[str] = []
+    for pos in (idx - 1, idx + 1):
+        if pos < 0 or pos >= len(lines):
+            continue
+        probe = normalize_spaces(lines[pos])
+        up = _ascii(probe.upper())
+        if not probe or STOP_RE.search(probe) or "***QUEDA" in up or "PENDIENT" in up:
+            continue
+        if _is_forbidden_description(probe) or _contains_forbidden_phone(probe):
+            continue
+        if re.search(r"[A-Za-z]", probe):
+            desc_parts.append(probe)
+    desc = normalize_spaces(" ".join(desc_parts))
+    if not desc:
+        return [], 0.0
+    item = {
+        "Proveedor": PROVIDER_NAME,
+        "Parser": PARSER_ID,
+        "AlbaranNumero": albaran,
+        "FechaAlbaran": fecha,
+        "SuPedidoCodigo": su_pedido,
+        "Codigo": unique_codes[0],
+        "Descripcion": desc,
+        "CantidadServida": None,
+        "PrecioUnitario": None,
+        "DescuentoPct": None,
+        "Importe": float(neto_comercial),
+        "Pagina": page_num,
+        "Pdf": "",
+        "ParseWarn": "berdin_single_code_footer_importe",
+    }
+    return [fix_qty_price_import(item)], float(neto_comercial)
+
 PARSER_ID = "berdin"
 PROVIDER_NAME = "BERDIN"
 # ============================
@@ -2149,19 +2255,22 @@ def parse_page(page, page_num):
         pass
 
     if not items:
-        if not _is_footer_summary_page(raw_lines):
-            header = {
-                "AlbaranNumero": meta.get("AlbaranNumero", ""),
-                "FechaAlbaran": meta.get("FechaAlbaran", ""),
-                "SuPedidoCodigo": meta.get("SuPedidoCodigo", ""),
-            }
+        header = {
+            "AlbaranNumero": meta.get("AlbaranNumero", ""),
+            "FechaAlbaran": meta.get("FechaAlbaran", ""),
+            "SuPedidoCodigo": meta.get("SuPedidoCodigo", ""),
+        }
+        _resc, _sum = _rescue_explicit_neto_line(lines, page_num, header)
+        if not _resc:
+            _resc, _sum = _rescue_single_code_footer(lines, page_num, header, neto_comercial)
+        if not _resc and not _is_footer_summary_page(raw_lines):
             _resc, _sum = _rescue_mode(lines, page_num, header)
-            if _resc:
-                items.extend(_resc)
-                try:
-                    meta["SumaImportesLineas"] = (meta.get("SumaImportesLineas") or 0) + _sum
-                except Exception:
-                    pass
+        if _resc:
+            items.extend(_resc)
+            try:
+                meta["SumaImportesLineas"] = (meta.get("SumaImportesLineas") or 0) + _sum
+            except Exception:
+                pass
 
     # Si sólo hay una línea y tenemos Neto Comercial en el pie, úsalo si falta el importe.
     if items and len(items) == 1:

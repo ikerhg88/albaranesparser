@@ -259,6 +259,20 @@ def _footer_hint_scores(up: str) -> dict[str, int]:
     return scores
 
 
+def _is_loyola_internal_form(up: str) -> bool:
+    return (
+        "LOYOLO" in up
+        or "CONFIRMACION SALIDA DE RETAL" in up
+        or "LOYOLANORTE.COM" in up
+        or ("LOYOLA NORTE" in up and "ELECTRICIDAD GENERAL" in up and "FACTURA" in up)
+        or (
+            "NUMERO" in up
+            and "OIALUME BIDEA" in up
+            and ("HORAS TRABAJADAS" in up or "MATERIALES Y OBSERVACIONES" in up)
+        )
+    )
+
+
 _HDR_CHECKS = {
     "BERDIN": _is_hdr_berdin,
     "ELEKTRA": _is_hdr_elektra,
@@ -298,6 +312,10 @@ def detect_proveedor(lines, joined_text, dbgmeta=None):
             scores[provider_name] += hits * BRAND_WEIGHT
 
     # 1) Cabeceras (ventana 2 líneas): sumar sin devolver temprano
+    if "LOYOLA NORTE" in scores and not _is_loyola_internal_form(up):
+        brand_hits["LOYOLA NORTE"] = 0
+        scores["LOYOLA NORTE"] = 0
+
     for i in range(len(U)):
         u = U[i]
         v = U[i + 1] if i + 1 < len(U) else ""

@@ -53,6 +53,7 @@ For installer changes, also run a silent install/self-test/uninstall smoke in a 
 - Treat compactation/suffix/cleanup-equivalent values as non-errors when the rule is general and applied consistently.
 - Preserve cross-week stability: SEMANA_10 improvements must not regress SEMANA_05, SEMANA_06, SEMANA_07, or SEMANA_09.
 - Prefer small supplier-local parser changes unless a shared utility is clearly needed.
+- At the end of each accepted weekly review, generate a human-review ZIP under `Albaranes_Pruebas/entregas/` with each PDF, its final master, discarded pages, fallback/no-detection notes, parser risk warnings, and `REPORTE_REVISION.md`. Keep these generated artifacts out of Git.
 
 ## GitHub Workflow
 

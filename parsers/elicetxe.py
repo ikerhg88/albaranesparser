@@ -11,8 +11,14 @@ ALB_CONTEXT_RE = re.compile(
     re.I,
 )
 ALB_LABEL_RE = re.compile(r"ALBAR[ÁA]N|EMATE\s+AGIRIA", re.I)
-SUPEDIDO_RE = re.compile(r"\b(?:[AH]-?\d{6}/[A-Z0-9]{1,4}|\d{2}\.\d{3}/\d{2,4})\b", re.I)
+SUPEDIDO_RE = re.compile(r"\b(?:[AH]-?\d{6}/[A-Z0-9]{1,4}|\d{2}\.\d{3}(?:[-/][A-Z0-9]{1,4})?)\b", re.I)
 DEC_RE = re.compile(r"^\d{1,3}(?:\.\d{3})*,\d{2,4}$")
+SHORT_REF_ROW_RE = re.compile(
+    r"^(?P<brand>[A-Z0-9&./-]+)\s+(?P<ref>[A-Z0-9][A-Z0-9./-]{1,})\s+"
+    r"(?P<qty>-?\d{1,4},\d{2})\s+(?P<concept>.+?)\s+"
+    r"(?P<price>\d{1,3}(?:\.\d{3})*,\d{3})(?:\s+(?P<imp>-?\d{1,3}(?:\.\d{3})*,\d{2}))?$",
+    re.I,
+)
 
 
 def _digits(token: str) -> str:
@@ -77,6 +83,15 @@ def _parse_row(ln: str):
     if len(tokens) < 4:
         return None
 
+    short = SHORT_REF_ROW_RE.match(ln)
+    if short:
+        qty = _num(short.group("qty"))
+        price = _num(short.group("price"))
+        imp = _num(short.group("imp")) if short.group("imp") else None
+        if imp is None and (price is None or price == 0):
+            return None
+        return qty, short.group("ref"), normalize_spaces(short.group("concept")), price, imp
+
     price_idx = None
     for i in range(len(tokens) - 1, -1, -1):
         if DEC_RE.match(tokens[i]):
@@ -139,6 +154,50 @@ def _parse_row(ln: str):
     return qty, code, concept, price, imp
 
 
+def _parse_miguelez_delivery(lines, page_num, albaran, fecha, supedido, proveedor_detectado):
+    joined = " ".join(lines)
+    if "MIGUELEZ" not in joined.upper() or "Pos. Material" not in joined:
+        return [], 0.0, supedido
+
+    m_sup = re.search(r"N[ºo]\s*Pedido\s+Cliente\s*:\s*([A-Z0-9./-]+)", joined, re.I)
+    if m_sup:
+        supedido = m_sup.group(1).upper()
+
+    row_re = re.compile(
+        r"^\s*(?P<pos>\d+)\s+(?P<code>\d{10,})\s+(?P<desc>.+?)\s+(?P<qty>\d{1,3}(?:\.\d{3})?)\s+M\b",
+        re.I,
+    )
+    items = []
+    for idx, ln in enumerate(lines):
+        m = row_re.match(ln)
+        if not m:
+            continue
+        desc = normalize_spaces(m.group("desc"))
+        if idx + 1 < len(lines):
+            nxt = normalize_spaces(lines[idx + 1])
+            if "BOBINA" in nxt.upper():
+                desc = normalize_spaces(f"{desc} {nxt}")
+        items.append(
+            {
+                "Proveedor": proveedor_detectado,
+                "Parser": PARSER_ID,
+                "AlbaranNumero": albaran,
+                "FechaAlbaran": fecha,
+                "SuPedidoCodigo": supedido,
+                "Codigo": m.group("code"),
+                "Descripcion": desc,
+                "CantidadServida": _num(m.group("qty")),
+                "PrecioUnitario": None,
+                "DescuentoPct": None,
+                "Importe": None,
+                "Pagina": page_num,
+                "Pdf": "",
+                "ParseWarn": "miguelez_delivery_no_importe",
+            }
+        )
+    return items, 0.0, supedido
+
+
 def parse_page(page, page_num, proveedor_detectado="ELICETXE"):
     text = page.extract_text() or ""
     lines = [normalize_spaces(ln) for ln in text.splitlines() if ln.strip()]
@@ -148,7 +207,24 @@ def parse_page(page, page_num, proveedor_detectado="ELICETXE"):
     items = []
     suma = 0.0
 
+    miguelez_items, miguelez_suma, miguelez_supedido = _parse_miguelez_delivery(
+        lines, page_num, albaran, fecha, supedido, proveedor_detectado
+    )
+    if miguelez_items:
+        meta = {
+            "Proveedor": proveedor_detectado,
+            "Parser": PARSER_ID,
+            "AlbaranNumero": albaran,
+            "FechaAlbaran": fecha,
+            "SuPedidoCodigo": miguelez_supedido,
+            "SumaImportesLineas": miguelez_suma,
+            "NetoComercialPie": np.nan,
+            "TotalAlbaranPie": np.nan,
+        }
+        return miguelez_items, meta
+
     stop_markers = ("TASAR", "VALIDACION", "VALIDACIÃ“N")
+    stop_markers = stop_markers + ("TOTAL ALBAR", "IMPORTES")
     start_idx = next((i for i, ln in enumerate(lines) if "MARCA" in ln.upper() and "REFER" in ln.upper()), 0)
 
     i = start_idx + 1
@@ -168,6 +244,16 @@ def parse_page(page, page_num, proveedor_detectado="ELICETXE"):
             continue
 
         qty, code, concept, price, imp = detail
+        if i + 1 < len(lines):
+            nxt = lines[i + 1]
+            nxt_up = nxt.upper()
+            if (
+                not any(m in nxt_up for m in stop_markers)
+                and not _parse_row(nxt)
+                and re.search(r"[A-Za-z]", nxt)
+            ):
+                concept = normalize_spaces(f"{concept} {nxt}")
+                i += 1
         if is_packing_list:
             concept_u = concept.upper()
             if code == "10010071" and "Z'6:" in concept_u and "&L/" in concept_u:

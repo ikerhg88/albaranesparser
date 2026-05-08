@@ -1153,6 +1153,7 @@ def _normalize_numeric_rows(rows: list[dict]) -> None:
 OPTIONAL_REQUIRED_FIELDS = {
     "ALKAIN": {"SuPedidoCodigo"},
     "BALANTXA": {"SuPedidoCodigo"},
+    "GABYL": {"SuPedidoCodigo"},
 }
 
 def _strip_diacritics(value):

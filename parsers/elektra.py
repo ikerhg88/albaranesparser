@@ -101,12 +101,16 @@ def _find_albaran_y_fecha(lines: list[str]) -> tuple[str, str]:
     fecha = _norm_date(mdate.group(1)) if mdate else ""
 
     albaran_num = ""
+    m_direct = re.search(r"AL[BE]ARAN\s*:?\s*([0-9\s]{4,8}\s*/\s*\d{3}\s*/\s*\d{2})", flat, flags=re.I)
+    if m_direct:
+        albaran_num = re.sub(r"\s+", "", m_direct.group(1))
+
     m_slash = re.search(r"\b(\d{4,6}(?:\s*/\s*\d{1,4}){1,2})\b", flat)
-    if m_slash:
+    if not albaran_num and m_slash:
         raw = m_slash.group(1)
         albaran_num = re.sub(r"\s*/\s*", "/", raw.strip())
         albaran_num = re.sub(r"\s+", "", albaran_num)
-    else:
+    elif not albaran_num:
         cands = []
         for m in re.finditer(r"(?<!\d)(\d{5})(?!\d)", flat):
             num = m.group(1)
@@ -371,10 +375,11 @@ def parse_page(page, page_num):
                 continue
 
             # Línea de artículo normal
-            if re.match(r"^\s*\d{3,}\*?\s+\S", ln):
-                cut_ln = _collapse_number_spaces(ln)
+            if re.match(r"^\s*\*?\s*\d{3,}\*?\s+\S", ln):
+                work_ln = re.sub(r"^\s*\*\s*", "", ln)
+                cut_ln = _collapse_number_spaces(work_ln)
                 first_num = NUM_TOKEN_RE.search(re.sub(r"\bNETO\b", " ", cut_ln, flags=re.I))
-                desc = cut_ln[:first_num.start()].strip() if first_num else re.sub(r"^\s*\d{3,}\*?\s+", "", ln).strip()
+                desc = cut_ln[:first_num.start()].strip() if first_num else re.sub(r"^\s*\d{3,}\*?\s+", "", work_ln).strip()
 
                 # Intenta separar código de artículo (primer token alfanumérico)
                 code = ""
@@ -385,7 +390,9 @@ def parse_page(page, page_num):
                         code = m_code.group(1).strip(" .-")
                         desc = desc[len(m_code.group(0)) :].strip(" :-")
 
-                toks, j = _grab_numbers_from_context(lines, i, max_tokens=4)
+                context_lines = list(lines)
+                context_lines[i] = work_ln
+                toks, j = _grab_numbers_from_context(context_lines, i, max_tokens=4)
                 unidades_por = _extract_unidades_por(toks)
                 qty = _to_float_signed(toks[0]) if len(toks) >= 1 else None
                 price_token = _collapse_number_spaces(toks[1]) if len(toks) >= 2 else ""

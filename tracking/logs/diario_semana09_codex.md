@@ -501,3 +501,30 @@ Bitacora operativa para mejorar `SEMANA_09` con control de regresion en `SEMANA_
 - `dist/deploy_parsers_20260428_1210_installer_v110.exe`
 - `dist/parsers_pack_20260428_1210_installer_v110.zip`
 - `dist/RELEASE_NOTES_20260428_1210_installer_v110.txt`
+---
+
+## 2026-05-08 - SEMANA_12 onboarding visual
+
+### Cambios aplicados
+- Movido `Albaranes_Pruebas/cargar_semanas/14-04-26 SEM 12.pdf` a `Albaranes_Pruebas/SEMANA_12/`.
+- Nuevos parsers: `parsers/vizcaina.py`, `parsers/kalon.py`, `parsers/loyola_norte.py`.
+- Ajustes locales:
+  - `parsers/gabyl.py`: fallback de inicio de tabla tolera puntuacion OCR inicial.
+  - `parsers/txofre.py`: seleccion de albaran compacto por frecuencia en paginas lado a lado y normalizacion de importes OCR `l0,12`.
+  - `parsers/__init__.py`: `LOYOLA NORTE` solo compite como proveedor cuando hay estructura de formulario interno/email propio, no por aparecer como cliente.
+
+### Validacion SEMANA_12
+- Baseline: `Albaranes_Pruebas/SEMANA_12/albaranes_master_run_sem12_baseline.xlsx`.
+- Final: `Albaranes_Pruebas/SEMANA_12/albaranes_master_run_sem12_iter6.xlsx`.
+- Resultado final: 42 paginas procesadas, 0 fallidos, 0 errores de ejecucion.
+- Revision visual documentada en `debug/vision_master/sem12_baseline/vision_notes.md`.
+
+### Regresion critica
+- `SEMANA_05`: 13 errores criticos, 10 filas con error; igual que `visioncheck_sem05_20260501`.
+- `SEMANA_06`: 27 errores criticos, 12 filas con error; igual que `visioncheck_sem06_20260501`.
+- `SEMANA_07`: 11 errores criticos, 8 filas con error; igual que `visioncheck_sem07_20260501`.
+- `SEMANA_09`: 7 errores criticos, 4 filas con error; igual que `visioncheck_sem09_20260501`.
+
+### Riesgo residual
+- `LOYOLA NORTE` contiene formularios manuscritos; se identifica proveedor/documento y se evita inventar importes, pero las descripciones manuscritas quedan como revision manual.
+- `VIZCAINA` no muestra importe visible en las paginas revisadas; el parser deja `Importe` vacio.
