@@ -175,3 +175,41 @@ Debe actualizarse antes de cerrar cualquier commit nuevo.
   - `tests/test_page_warnings.py`
   - `tracking/logs/diario_semana11_codex.md`
 
+### cd99891 - Add Semana 12-19 parser coverage
+
+- Fecha: 2026-05-08T21:46:57+02:00
+- Autor: codexikerhg
+- Tipo: parsers y reporte operativo
+- Resumen: incorpora cobertura de proveedores para SEMANA_12 a SEMANA_19 con nuevos parsers y mejoras en deteccion/normalizacion para A2Z World, Axor, ELT, Itevelesa, Kalon, Loyola Norte, Montte, Murrplastik, Nicron, Plataformas Donosti, Salvi, Signify, TC Medida, Vascoplast y Vizcaina; refuerza reglas de Aelvasa, Berdin, Elektra, Elicetxe, Gabyl, Hilti, Saltoki y Txofre sin hardcodear paginas, albaranes ni pedidos; documenta en AGENTS la generacion de ZIP de revision humana por semana.
+- Validacion: `python -m py_compile main.py config.py albaranes_tool\gui_app.py albaranes_tool\selftest.py portable_release\build_portable.py portable_release\src\bootstrap_installer.py portable_release\src\bootstrap_runner.py` mas todos los `parsers/*.py`; `python -m pytest -q` con 24 tests pasados; relanzadas SEMANA_12 a SEMANA_19 con masters `albaranes_master_rerun_latest_fix_20260508_205045.xlsx`; controles SEMANA_05/06/07/09 identicos al baseline `sem19_iter2_control`; auditoria `rg` sin hardcodes de semanas, paginas, albaranes, pedidos ni codigos concretos del lote.
+- Impacto/Riesgo: mejora cobertura de los lotes recientes y deja trazabilidad de revision humana. Persisten puntos de revision: paginas descartadas en SEMANA_16/17/18/19 y fallbacks en SEMANA_17/19; los PDFs, Excels, ZIPs y CSVs generados quedan fuera de Git.
+- Archivos:
+  - `AGENTS.md`
+  - `config.py`
+  - `main.py`
+  - `parsers/__init__.py`
+  - `parsers/a2zworld.py`
+  - `parsers/aelvasa.py`
+  - `parsers/axor.py`
+  - `parsers/berdin.py`
+  - `parsers/elektra.py`
+  - `parsers/elicetxe.py`
+  - `parsers/elt.py`
+  - `parsers/gabyl.py`
+  - `parsers/hilti.py`
+  - `parsers/itevelesa.py`
+  - `parsers/kalon.py`
+  - `parsers/loyola_norte.py`
+  - `parsers/montte.py`
+  - `parsers/murrplastik.py`
+  - `parsers/nicron.py`
+  - `parsers/plataformas_donosti.py`
+  - `parsers/saltoki.py`
+  - `parsers/salvi.py`
+  - `parsers/signify.py`
+  - `parsers/tc_medida.py`
+  - `parsers/txofre.py`
+  - `parsers/vascoplast.py`
+  - `parsers/vizcaina.py`
+  - `tracking/logs/diario_semana09_codex.md`
+
